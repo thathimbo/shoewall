@@ -32,13 +32,14 @@ jobs:
       - name: Test
         run: npm test
 
-      # enablement: true switches Pages on for the repository through the API,
-      # so the site goes live without anyone opening the settings page.
+      # Pages has to be switched on once by hand, under
+      # Settings -> Pages -> Build and deployment -> Source -> GitHub Actions.
+      # Doing it from here with `enablement: true` is not possible in this
+      # repository: the workflow token is refused with "Resource not accessible
+      # by integration". Once the source is set, every push deploys on its own.
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Build
         run: npm run build

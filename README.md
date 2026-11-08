@@ -9,7 +9,17 @@ your photos and your catalog live in this browser's IndexedDB.
 
 ---
 
-## Get it running
+## Live site
+
+<https://thathimbo.github.io/shoewall/>
+
+Every push to `claude/sneaker-wall-layout-app-ftat6l` runs the tests, builds and
+deploys. **One-time setup:** in the repository, go to Settings → Pages → Build
+and deployment → Source and choose **GitHub Actions**, then re-run the latest
+workflow. The workflow cannot switch that on by itself — its token is refused
+with "Resource not accessible by integration".
+
+## Get it running locally
 
 ```bash
 npm install
