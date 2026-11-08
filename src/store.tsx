@@ -8,6 +8,8 @@ import { DEFAULT_SETTINGS, makeDefaultWalls } from './lib/defaults';
 
 interface Store {
   ready: boolean;
+  /** Set when the project could not be read out of IndexedDB. */
+  loadError: string | null;
   pairs: Pair[];
   settings: Settings;
   walls: Wall[];
@@ -33,6 +35,7 @@ const Ctx = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [pairs, setPairs] = useState<Pair[]>([]);
   const [settings, setSettingsState] = useState<Settings>(DEFAULT_SETTINGS);
   const [walls, setWallsState] = useState<Wall[]>(makeDefaultWalls);
@@ -42,9 +45,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [p, s, w, l] = await Promise.all([
-        db.getAllPairs(), db.loadSettings(), db.loadWalls(), db.loadLayout(),
-      ]);
+      let p, s, w, l;
+      try {
+        [p, s, w, l] = await Promise.all([
+          db.getAllPairs(), db.loadSettings(), db.loadWalls(), db.loadLayout(),
+        ]);
+      } catch (err) {
+        if (cancelled) return;
+        // Render the app anyway: it is more use to see the screens and a plain
+        // explanation than to stare at a loading message that never finishes.
+        setLoadError(err instanceof Error ? err.message : String(err));
+        setReady(true);
+        return;
+      }
       if (cancelled) return;
       setPairs(p);
       // Merge so a project saved by an older build still gets every field.
@@ -175,11 +188,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Store>(
     () => ({
-      ready, pairs, settings, walls, layout,
+      ready, loadError, pairs, settings, walls, layout,
       savePair, savePairs, removePair, saveSettings, saveWalls, setLayout,
       addImage, removeImage, replaceAll, wipe, imageEpoch,
     }),
-    [ready, pairs, settings, walls, layout, savePair, savePairs, removePair,
+    [ready, loadError, pairs, settings, walls, layout, savePair, savePairs, removePair,
      saveSettings, saveWalls, setLayout, addImage, removeImage, replaceAll, wipe, imageEpoch],
   );
 

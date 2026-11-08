@@ -15,9 +15,27 @@ const DB_VERSION = 1;
 
 let dbp: Promise<IDBPDatabase<ShoeWallDB>> | null = null;
 
+/** How long to wait for IndexedDB before treating it as unavailable. */
+const OPEN_TIMEOUT_MS = 12_000;
+
+export class StorageUnavailableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'StorageUnavailableError';
+  }
+}
+
 function db() {
   if (!dbp) {
-    dbp = openDB<ShoeWallDB>(DB_NAME, DB_VERSION, {
+    const opening = openDB<ShoeWallDB>(DB_NAME, DB_VERSION, {
+      // Fires when another tab still holds an older version of the database.
+      // Without this the open request waits forever and the app sits on its
+      // loading message with nothing to show for it.
+      blocked() {
+        throw new StorageUnavailableError(
+          'Another tab has an older version of ShoeWall open. Close the other tabs and reload.',
+        );
+      },
       upgrade(d) {
         if (!d.objectStoreNames.contains('pairs')) d.createObjectStore('pairs', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('images')) {
@@ -26,6 +44,25 @@ function db() {
         }
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
       },
+    });
+
+    // A browser with storage switched off can leave the open request pending
+    // rather than rejecting, so cap the wait and say what happened.
+    dbp = Promise.race([
+      opening,
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new StorageUnavailableError(
+            'The browser did not open ShoeWall\u2019s storage within ' +
+            `${OPEN_TIMEOUT_MS / 1000} seconds. Private browsing and blocked site data both do this.`,
+          )),
+          OPEN_TIMEOUT_MS,
+        ),
+      ),
+    ]).catch((err) => {
+      // Let a later call try again rather than caching the failure forever.
+      dbp = null;
+      throw err;
     });
   }
   return dbp;

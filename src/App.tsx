@@ -26,7 +26,7 @@ export default function App() {
 }
 
 function Shell() {
-  const { ready, pairs, layout, settings, walls } = useStore();
+  const { ready, loadError, pairs, layout, settings, walls } = useStore();
   const [tab, setTab] = useState<Tab>(() => {
     const h = window.location.hash.replace('#', '');
     return (TABS as readonly string[]).includes(h) ? (h as Tab) : 'capture';
@@ -81,6 +81,17 @@ function Shell() {
       </header>
 
       <main role="tabpanel" aria-label={LABELS[tab]}>
+        {loadError ? (
+          <div className="notice bad" role="alert">
+            <strong>Could not open this browser&rsquo;s storage</strong>
+            <p style={{ margin: '.3rem 0 0' }}>{loadError}</p>
+            <p style={{ margin: '.3rem 0 0' }}>
+              ShoeWall keeps everything in IndexedDB on this device, so until that works nothing can be saved or
+              loaded. It is usually private browsing, or site data blocked for this site. Try a normal window, allow
+              site data, and reload. Your project is not lost — it is still in whichever browser profile saved it.
+            </p>
+          </div>
+        ) : null}
         {!ready ? (
           <div className="card"><p className="muted">Loading your project…</p></div>
         ) : tab === 'capture' ? (
