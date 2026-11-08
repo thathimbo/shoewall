@@ -5,9 +5,9 @@ import { classifyHeight } from '../lib/defaults';
 import { fileToImageData, imageDataToBlob, downscale } from '../lib/image';
 import { detectPaper, correctPerspective, PaperNotFoundError, PAPER_SCORE_FLOOR, type PaperDetection, type Pt } from '../lib/paper';
 import {
-  removeBackground, largestAlphaComponent, suggestHandles, measureFromHandles,
+  removeBackground, alphaComponents, pickShoeComponent, suggestHandles, measureFromHandles,
   buildCutout, cropToHandles, dominantColors, BackgroundRemovalError,
-  type Handles, type MaskStats,
+  type Handles, type MaskStats, type ShoePick,
 } from '../lib/cutout';
 import { PointStage, type StagePoint } from '../components/PointStage';
 import { Notice, NumField, TextField, Checkbox, Progress, SelectField, fmtIn } from '../components/ui';
@@ -24,6 +24,8 @@ interface WorkingState {
   cutRgba: ImageData | null;
   cutUrl: string | null;
   mask: MaskStats | null;
+  /** How confidently the shoe was told apart from the sheet. */
+  pick: ShoePick['verdict'];
   handles: Handles;
   handlesTouched: boolean;
   ppiOverride: number | null;
@@ -109,13 +111,23 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
         }
 
         setStatus({ msg: 'Measuring…', frac: 0.9 });
-        const mask = cutRgba ? largestAlphaComponent(cutRgba) : null;
+        // The sheet is almost always salient enough to survive background
+        // removal, so it is told apart from the shoe by where it is, not by
+        // what colour it is.
+        const picked: ShoePick = cutRgba
+          ? pickShoeComponent(
+              alphaComponents(cutRgba, { paperRect: detection.paperRect }),
+              true,
+            )
+          : { verdict: 'none', component: null };
+        const mask = picked.verdict === 'shoe' ? picked.component : null;
         const handles: Handles = mask ? suggestHandles(mask) : defaultHandles(detection);
 
         const cutUrl = cutRgba ? track(URL.createObjectURL(await imageDataToBlob(cutRgba))) : null;
 
         setW({
           source, detection, correctedUrl, cutRgba, cutUrl, mask,
+          pick: picked.verdict,
           handles, handlesTouched: false, ppiOverride: null, bgFailed,
         });
         const seedSource = cutRgba ?? detection.corrected;
@@ -302,9 +314,17 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
               corrected photo instead of a clean cutout.
             </Notice>
           ) : null}
-          {!w.mask && !w.bgFailed ? (
+          {w.pick === 'merged-with-paper' ? (
+            <Notice kind="warn" title="The shoe and the sheet came back as one shape">
+              That happens when the shoe is lying on the sheet: background removal keeps both, and nothing in the
+              colours reliably separates a pale midsole from copy paper. The measurements below are therefore{' '}
+              <strong>not</strong> the shoe yet — drag all four handles onto the shoe itself, or shoot it again with
+              the shoe <strong>beside</strong> the sheet, which is the more reliable way round.
+            </Notice>
+          ) : null}
+          {w.pick === 'none' && !w.bgFailed ? (
             <Notice kind="warn" title="No shoe outline found">
-              Background removal returned nothing solid enough to outline, so the handles start at the paper edges.
+              Background removal returned nothing solid enough to outline, so the handles start at the sheet's edges.
               Drag all four onto the shoe.
             </Notice>
           ) : null}
@@ -349,7 +369,11 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
               {d.orientation === 'landscape' ? 'Paper landscape' : 'Paper portrait'} · {settings.paper.label}
             </span>
             <span className="pill">{ppi.toFixed(1)} px/in</span>
-            {w.handlesTouched ? <span className="pill good">adjusted by hand</span> : <span className="pill">automatic</span>}
+            {w.handlesTouched
+              ? <span className="pill good">adjusted by hand</span>
+              : w.pick === 'shoe'
+                ? <span className="pill">outline found</span>
+                : <span className="pill bad">outline unreliable</span>}
           </div>
         </div>
 
@@ -440,8 +464,12 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
       <div className="card">
         <h2>Capture a pair</h2>
         <ol className="small muted" style={{ paddingLeft: '1.1rem', margin: '0 0 .7rem' }}>
-          <li>Lay one shoe on its side on a sheet of {settings.paper.label} ({settings.paper.widthIn}" × {settings.paper.heightIn}"), or right beside it.</li>
-          <li>Shoot from directly above, with the whole sheet in frame.</li>
+          <li>
+            Put a sheet of {settings.paper.label} ({settings.paper.widthIn}" × {settings.paper.heightIn}") on the floor
+            and lay one shoe on its side <strong>right beside it</strong> — not on it. Beside is worth the extra
+            second: the app can then tell the shoe from the sheet every time.
+          </li>
+          <li>Shoot from directly above, with the whole sheet and the whole shoe in frame.</li>
           <li>Check the outline and measurements on the next screen before saving.</li>
         </ol>
         {error ? <Notice kind="bad" title="That did not work">{error}</Notice> : null}
@@ -468,6 +496,12 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
         <p className="small muted">
           The sheet is the only thing in the photo whose size is known, so it is what turns pixels into inches. If no
           sheet is found the app says so and lets you place the four corners by hand — it never guesses a scale.
+        </p>
+        <p className="small muted">
+          Keeping the shoe beside the sheet matters for a second reason: background removal keeps the sheet as well as
+          the shoe, and colour cannot separate them — a cream midsole is about 5 CIEDE2000 units from copy paper, and
+          white leather about 2. With the shoe beside the sheet they come back as two separate shapes and the app uses
+          the sheet's known position to pick the right one. On the sheet, it says so rather than measuring the sheet.
         </p>
       </div>
     </>

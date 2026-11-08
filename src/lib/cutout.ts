@@ -46,25 +46,40 @@ export async function removeBackground(
   return fileToImageData(out, data.width * data.height + 1);
 }
 
-export interface MaskStats {
-  /** Bounding box of the kept component, in pixels of the supplied image. */
+export interface Rect { x: number; y: number; w: number; h: number }
+
+export interface MaskComponent {
+  /** Bounding box of this component, in pixels of the supplied image. */
   bbox: { x0: number; y0: number; x1: number; y1: number };
-  /** Count of opaque pixels in the kept component. */
+  /** Count of opaque pixels. */
   area: number;
-  /** Extreme points of the component, useful as handle starting positions. */
-  extremes: { left: Pt; right: Pt; top: Pt; bottom: Pt };
-  /** A mask of just the kept component, 1 byte per pixel, row-major. */
+  /** area / bounding-box area. A sheet of paper fills its box; a shoe does not. */
+  fill: number;
+  /** Share of this component's pixels that fall inside the paper rectangle. */
+  paperOverlap: number;
+  /** A mask of just this component, 1 byte per pixel, row-major. */
   mask: Uint8Array;
   width: number;
   height: number;
+  extremes: { left: Pt; right: Pt; top: Pt; bottom: Pt };
 }
 
+export type MaskStats = MaskComponent;
+
 /**
- * Finds the largest connected opaque component. Background removal sometimes
- * keeps a scrap of floor or the sheet of paper; taking the biggest blob and
- * then letting the user adjust handles is more honest than cleverness.
+ * Every connected run of opaque pixels, largest first.
+ *
+ * Background removal keeps whatever it finds salient, and a sheet of paper on
+ * a floor is extremely salient — so the sheet usually comes back as foreground
+ * too. Returning all the components lets the caller use the sheet's known
+ * position to tell them apart, which colour cannot do: a cream midsole is only
+ * about 5 CIEDE2000 units from copy paper, and white leather about 2.
  */
-export function largestAlphaComponent(data: ImageData, alphaThreshold = 128): MaskStats | null {
+export function alphaComponents(
+  data: ImageData,
+  opts: { alphaThreshold?: number; paperRect?: Rect | null; minArea?: number } = {},
+): MaskComponent[] {
+  const alphaThreshold = opts.alphaThreshold ?? 128;
   const { width: w, height: h } = data;
   const px = data.data;
   const visited = new Uint8Array(w * h);
@@ -95,35 +110,79 @@ export function largestAlphaComponent(data: ImageData, alphaThreshold = 128): Ma
       if (!visited[q] && px[q * 4 + 3] >= alphaThreshold) { visited[q] = 1; stack[sp++] = q; }
     }
   }
+  if (!sizes.length) return [];
 
-  if (!sizes.length) return null;
-  let bestId = 0;
-  for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[bestId]) bestId = i;
+  const minArea = opts.minArea ?? Math.max(64, Math.round(w * h * 0.004));
+  const keep = sizes.map((n, i) => ({ i, n })).filter((c) => c.n >= minArea).sort((a, b) => b.n - a.n);
+  if (!keep.length) return [];
 
-  const mask = new Uint8Array(w * h);
-  let x0 = w, y0 = h, x1 = -1, y1 = -1;
-  let left: Pt = { x: w, y: 0 }, right: Pt = { x: -1, y: 0 };
-  let top: Pt = { x: 0, y: h }, bottom: Pt = { x: 0, y: -1 };
-  for (let p = 0; p < w * h; p++) {
-    if (label[p] !== bestId) continue;
-    mask[p] = 1;
-    const x = p % w, y = (p - x) / w;
-    if (x < x0) x0 = x;
-    if (y < y0) y0 = y;
-    if (x > x1) x1 = x;
-    if (y > y1) y1 = y;
-    if (x < left.x) left = { x, y };
-    if (x > right.x) right = { x, y };
-    if (y < top.y) top = { x, y };
-    if (y > bottom.y) bottom = { x, y };
+  const pr = opts.paperRect ?? null;
+  const out: MaskComponent[] = [];
+  for (const { i: id, n } of keep) {
+    const mask = new Uint8Array(w * h);
+    let x0 = w, y0 = h, x1 = -1, y1 = -1, inPaper = 0;
+    let left: Pt = { x: w, y: 0 }, right: Pt = { x: -1, y: 0 };
+    let top: Pt = { x: 0, y: h }, bottom: Pt = { x: 0, y: -1 };
+    for (let p = 0; p < w * h; p++) {
+      if (label[p] !== id) continue;
+      mask[p] = 1;
+      const x = p % w, y = (p - x) / w;
+      if (x < x0) x0 = x;
+      if (y < y0) y0 = y;
+      if (x > x1) x1 = x;
+      if (y > y1) y1 = y;
+      if (x < left.x) left = { x, y };
+      if (x > right.x) right = { x, y };
+      if (y < top.y) top = { x, y };
+      if (y > bottom.y) bottom = { x, y };
+      if (pr && x >= pr.x && x < pr.x + pr.w && y >= pr.y && y < pr.y + pr.h) inPaper++;
+    }
+    const boxArea = Math.max(1, (x1 - x0 + 1) * (y1 - y0 + 1));
+    out.push({
+      bbox: { x0, y0, x1, y1 }, area: n, fill: n / boxArea,
+      paperOverlap: pr ? inPaper / n : 0,
+      mask, width: w, height: h, extremes: { left, right, top, bottom },
+    });
   }
+  return out;
+}
 
-  return {
-    bbox: { x0, y0, x1, y1 },
-    area: sizes[bestId],
-    extremes: { left, right, top, bottom },
-    mask, width: w, height: h,
-  };
+export type ShoePick =
+  /** A component clear of the sheet: this is the shoe. */
+  | { verdict: 'shoe'; component: MaskComponent }
+  /**
+   * Only one blob came back and it is the sheet's size and shape, with the shoe
+   * merged into it. The measurement cannot be trusted and the caller must say so.
+   */
+  | { verdict: 'merged-with-paper'; component: MaskComponent }
+  /** Nothing usable was found. */
+  | { verdict: 'none'; component: null };
+
+/**
+ * Picks the shoe out of the components, using the sheet's known position
+ * rather than its colour.
+ *
+ * A component that sits almost entirely inside the sheet AND fills its own
+ * bounding box is the bare sheet, and is discarded. If the only thing left is
+ * sheet-shaped, the shoe was lying on the sheet and the two segmented as one
+ * blob — that is reported rather than measured, because any number taken from
+ * it would be the sheet's size, not the shoe's.
+ */
+export function pickShoeComponent(components: MaskComponent[], hasPaperRect: boolean): ShoePick {
+  if (!components.length) return { verdict: 'none', component: null };
+  if (!hasPaperRect) return { verdict: 'shoe', component: components[0] };
+
+  const isSheetLike = (c: MaskComponent) => c.paperOverlap > 0.9 && c.fill > 0.85;
+  const clear = components.filter((c) => !isSheetLike(c) && c.paperOverlap < 0.9);
+  if (clear.length) return { verdict: 'shoe', component: clear[0] };
+
+  const merged = components.find((c) => c.fill > 0.8) ?? components[0];
+  return { verdict: 'merged-with-paper', component: merged };
+}
+
+/** Back-compatible helper: the largest component, ignoring the sheet question. */
+export function largestAlphaComponent(data: ImageData, alphaThreshold = 128): MaskStats | null {
+  return alphaComponents(data, { alphaThreshold, minArea: 1 })[0] ?? null;
 }
 
 /** The four measurement handles, in pixels of the corrected image. */
