@@ -108,8 +108,8 @@ export function LayoutTab({
         </div>
         <p className="small muted" style={{ marginTop: '.3rem' }}>
           {pattern === 'grid'
-            ? 'Rows line up straight across. Each row is centred so the left and right margins match.'
-            : 'Every other column drops by half a row, like brickwork. The stack starts high enough that the dropped columns stay inside the usable band.'}
+            ? 'Rows line up straight across. Each row is centred so the left and right margins match, and the stack hangs from the top of the usable band.'
+            : 'Every other column drops by half a row, like brickwork. The stack hangs from the top of the usable band and reserves room below so the dropped columns stay inside it.'}
         </p>
 
         <h3 className="small muted" style={{ marginTop: '.6rem' }}>Colour</h3>

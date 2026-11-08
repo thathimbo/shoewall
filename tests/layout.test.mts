@@ -85,11 +85,12 @@ for (const wl of L.walls) {
     // no horizontal overlap between brackets
     for (let i = 0; i + 1 < brs.length; i++) ok(brs[i].extent.x1 <= brs[i + 1].extent.x0 + 1e-9, `no overlap r${row.rowIndex} c${i}`);
   }
-  // the stack is centred in the band: equal slack above and below
+  // the stack hangs from the top of the band, slack left at the bottom
   {
     const bottom = Math.min(...wl.brackets.map(b => b.extent.y0));
     const top = Math.max(...wl.brackets.map(b => b.extent.y1));
-    near(bottom - wl.usableY.y0, wl.usableY.y1 - top, `wall ${wl.wallIndex} stack centred in band`, 1e-6);
+    near(top, wl.usableY.y1, `wall ${wl.wallIndex} stack flush with the band top`, 1e-6);
+    ok(bottom >= wl.usableY.y0 - 1e-6, `wall ${wl.wallIndex} stack still inside the band bottom`);
   }
   // tallest row at the bottom
   const hs = [...wl.rows].sort((a,b)=>a.rowIndex-b.rowIndex).map(r => r.maxPairHeightIn);
@@ -156,9 +157,8 @@ console.log('--- manual swap ---');
   const left = brs[0].extent.x0 - n0.usableX.x0;
   const right = n0.usableX.x1 - brs[brs.length - 1].extent.x1;
   near(left, right, 'post-swap row still centred horizontally');
-  const bottom = Math.min(...n0.brackets.map(b => b.extent.y0));
   const top = Math.max(...n0.brackets.map(b => b.extent.y1));
-  near(bottom - n0.usableY.y0, n0.usableY.y1 - top, 'post-swap stack still centred vertically');
+  near(top, n0.usableY.y1, 'post-swap stack still flush with the band top');
 }
 
 console.log('--- blockers ---');

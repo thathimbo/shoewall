@@ -96,12 +96,12 @@ export function WallsTab() {
               <NumField
                 label="Usable band — bottom" value={w.bandBottomIn} step={1} min={0} required
                 onChange={(v) => update(i, { bandBottomIn: v })}
-                hint="Inches from the floor to the lowest point a shoe may reach."
+                hint="Inches from the floor to the lowest point a shoe may reach. Spare height is left here."
               />
               <NumField
                 label="Usable band — top" value={w.bandTopIn} step={1} min={0} required
                 onChange={(v) => update(i, { bandTopIn: v })}
-                hint="Inches from the floor to the highest point a shoe may reach."
+                hint="Inches from the floor to the highest point a shoe may reach. The pattern hangs from this line."
               />
             </div>
 

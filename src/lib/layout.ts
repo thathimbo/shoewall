@@ -326,7 +326,7 @@ export function generateLayout(input: GenerateInput): GenerateResult {
       brackets,
       warnings: [],
     };
-    centerWallVertically(built);
+    anchorWallToBandTop(built);
 
     const warnings = [...plan.warnings];
     for (const b of brackets) {
@@ -359,7 +359,7 @@ export function generateLayout(input: GenerateInput): GenerateResult {
   const unplacedPairIds = eligible.filter((p) => !placed.has(p.id)).map((p) => p.id);
 
   notes.push(
-    'Each wall\u2019s rows are centred inside its usable band, so the space above and below the pattern matches.',
+    'Rows hang from the top of each wall\u2019s usable band, so the pattern sits tight to the ceiling and any spare height is left at the bottom.',
   );
   if (s.hardware.plateToArmTopIn === null) {
     notes.push(
@@ -401,18 +401,15 @@ export function generateLayout(input: GenerateInput): GenerateResult {
 
 
 /**
- * Slides a wall's whole stack of rows so the empty band above it matches the
- * empty band below. Rows are built from the band bottom upwards; without this
- * a short collection sits in a puddle at the bottom with dead wall above it.
- * The usable band still sets the envelope — nothing is pushed outside it.
+ * Slides a wall's whole stack of rows up so the highest shoe sits flush with
+ * the top of the usable band. Rows are built from the band bottom upwards, but
+ * the ceiling is the fixed reference in the room: the pattern hangs from the
+ * top and any slack is left below, where the floor is.
  */
-export function centerWallVertically(wl: WallLayout): void {
+export function anchorWallToBandTop(wl: WallLayout): void {
   if (!wl.brackets.length) return;
-  const contentBottom = Math.min(...wl.brackets.map((b) => b.extent.y0));
   const contentTop = Math.max(...wl.brackets.map((b) => b.extent.y1));
-  const below = contentBottom - wl.usableY.y0;
-  const above = wl.usableY.y1 - contentTop;
-  const shift = (above - below) / 2;
+  const shift = wl.usableY.y1 - contentTop;
   if (Math.abs(shift) < 1e-9) return;
   for (const b of wl.brackets) {
     b.armTopYIn += shift;
@@ -776,7 +773,7 @@ export function recomputeWall(
     });
   }
 
-  centerWallVertically(wl);
+  anchorWallToBandTop(wl);
 
   for (const b of wl.brackets) {
     if (b.extent.y0 < wl.usableY.y0 - 0.01) {

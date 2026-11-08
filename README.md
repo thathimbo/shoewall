@@ -98,7 +98,9 @@ sampled from the box between the handles instead.
 
 Per wall: width, the bottom and top of the usable band, and whether each end
 is a corner shared with another wall. Band heights start **blank** — the
-generator refuses to run until you enter them.
+generator refuses to run until you enter them. The pattern hangs from the top
+of the band, so that line is the one that matters most; spare height is left at
+the bottom.
 
 At a shared corner, one of the two walls keeps 8" clear (configurable) so the
 shoes do not collide. Tick *this wall keeps the clearance clear* on whichever
@@ -112,7 +114,9 @@ Spacing: 1.25" between the toes of neighbouring columns, 0.5" between rows.
 
 - **Pattern** — straight grid, or half-drop with every other column dropped
   half a row like brickwork. Each row is centred so the left and right margins
-  match, and each wall's stack of rows is centred in its usable band.
+  match, and each wall's stack **hangs from the top of its usable band** — the
+  ceiling is the fixed reference, so any spare height is left down at the floor
+  end.
 - **Rows group by height.** Tallest pairs go in the bottom rows, so high-tops
   sit together and low down, and row heights stay even.
 - **Colour** — *spread colours apart* runs a greedy pass then simulated
