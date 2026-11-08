@@ -5,18 +5,20 @@ on:
     branches: [claude/sneaker-wall-layout-app-ftat6l]
   workflow_dispatch:
 
+# Only contents:write is needed. The Pages *API* route was tried first and the
+# workflow token is refused there: creating a Pages site needs administration
+# rights, which GITHUB_TOKEN never has. Publishing to a gh-pages branch instead
+# uses ordinary push access, and GitHub serves that branch without anyone
+# having to open the repository settings.
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Let a running deploy finish rather than cancelling it part-published.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,32 +34,27 @@ jobs:
       - name: Test
         run: npm test
 
-      # Pages has to be switched on once by hand, under
-      # Settings -> Pages -> Build and deployment -> Source -> GitHub Actions.
-      # Doing it from here with `enablement: true` is not possible in this
-      # repository: the workflow token is refused with "Resource not accessible
-      # by integration". Once the source is set, every push deploys on its own.
-      - name: Configure Pages
-        id: pages
-        uses: actions/configure-pages@v5
-
       - name: Build
         run: npm run build
         env:
           # A project site is served from /<repo>/, so the bundle and the
           # on-demand OpenCV.js load both need that prefix.
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          BASE_PATH: /${{ github.event.repository.name }}/
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to the gh-pages branch
+        run: |
+          set -euo pipefail
+          cd dist
+          # Without this, GitHub runs the output through Jekyll, which skips
+          # files and directories whose names begin with an underscore.
+          touch .nojekyll
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Deploy ${GITHUB_SHA}"
+          git push -f \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

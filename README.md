@@ -14,10 +14,14 @@ your photos and your catalog live in this browser's IndexedDB.
 <https://thathimbo.github.io/shoewall/>
 
 Every push to `claude/sneaker-wall-layout-app-ftat6l` runs the tests, builds and
-deploys. **One-time setup:** in the repository, go to Settings → Pages → Build
-and deployment → Source and choose **GitHub Actions**, then re-run the latest
-workflow. The workflow cannot switch that on by itself — its token is refused
-with "Resource not accessible by integration".
+pushes the result to the `gh-pages` branch, which GitHub serves.
+
+The workflow cannot use the Pages API to create the site itself — that needs
+repository administration rights, which `GITHUB_TOKEN` never has, so it is
+refused with "Resource not accessible by integration". Publishing to a branch
+only needs ordinary push access. If the site does not appear on its own, set
+Settings → Pages → Build and deployment → Source to **Deploy from a branch**,
+branch `gh-pages`, folder `/ (root)`.
 
 ## Get it running locally
 
