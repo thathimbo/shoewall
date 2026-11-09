@@ -83,9 +83,10 @@ export interface PaperCandidate {
   quad: [Pt, Pt, Pt, Pt];
   area: number;
   /**
-   * How much lighter the quad is than the band of surface just outside it,
-   * 0..1. Measured locally, so it works on a dark floor and a light one, and
-   * is not thrown off by a shoe lying across the sheet.
+   * How strongly the quad stands out from the band of surface just outside it,
+   * 0..1, in EITHER direction. Paper on a dark floor is lighter; a Gridfinity
+   * baseplate on a pale floor is darker. Both are targets, so what counts is
+   * the size of the step, not its sign.
    */
   brightnessEdge: number;
   /** 1 when the quad's aspect matches the expected paper aspect. */
@@ -128,11 +129,11 @@ export async function detectPaper(
   if (!best) {
     const nearMiss = all[0];
     throw new PaperNotFoundError(
-      'No sheet of paper found. OpenCV could not find a four-sided shape that is large, lighter than the surface around it and about the right proportions for the paper.' +
+      'Reference target not found. OpenCV could not find a four-sided shape that is large, clearly different in tone from the surface around it, and about the right proportions for the target.' +
         (nearMiss
           ? ` The closest thing it found scored ${(nearMiss.score * 100).toFixed(0)} out of 100 (needs ${(PAPER_SCORE_FLOOR * 100).toFixed(0)}).`
           : '') +
-        ' Shoot from directly above with the whole sheet in frame against a contrasting surface — or place the four corners by hand below.',
+        ' Shoot from directly above with the whole target in frame against a contrasting surface — or place the four corners by hand below.',
     );
   }
   return best;
@@ -371,10 +372,13 @@ function dedupeQuads<T extends { quad: [Pt, Pt, Pt, Pt]; area: number }>(list: T
 }
 
 /**
- * How much lighter the inside of the quad is than a band of surface just
- * outside it, normalised over 40 grey levels. Paper is lighter than almost any
- * floor, and because the comparison is local it holds whether the floor is
- * dark wood or pale carpet. A quad drawn on plain floor scores ~0.
+ * How far the inside of the quad sits from a band of surface just outside it,
+ * normalised over 40 grey levels and taken as an absolute difference.
+ *
+ * The sign is deliberately ignored: a sheet of paper is lighter than the floor,
+ * a dark 3D-printed baseplate is darker than it, and either makes an equally
+ * good reference target. A quad drawn on plain floor matches its surroundings
+ * and scores ~0 whichever way round the floor is.
  */
 function brightnessEdgeOf(
   cv: Awaited<ReturnType<typeof loadOpenCv>>,
@@ -404,7 +408,7 @@ function brightnessEdgeOf(
 
     const inside = cv.mean(gray, mask)[0];
     const outside = cv.mean(gray, ring)[0];
-    return Math.max(0, Math.min(1, (inside - outside) / 40));
+    return Math.max(0, Math.min(1, Math.abs(inside - outside) / 40));
   } finally {
     kernel?.delete();
     polys.delete();

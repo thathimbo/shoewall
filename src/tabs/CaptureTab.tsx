@@ -2,17 +2,36 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Pair, Swatch } from '../types';
 import { useStore } from '../store';
 import { classifyHeight } from '../lib/defaults';
-import { fileToImageData, imageDataToBlob, downscale } from '../lib/image';
-import { detectPaper, correctPerspective, PaperNotFoundError, PAPER_SCORE_FLOOR, type PaperDetection, type Pt } from '../lib/paper';
+import { fileToImageData, imageDataToBlob, downscale, makeThumbnail } from '../lib/image';
+import { PaperNotFoundError, type PaperDetection, type Pt } from '../lib/paper';
 import {
-  removeBackground, alphaComponents, pickShoeComponent, suggestHandles, measureFromHandles,
-  buildCutout, cropToHandles, dominantColors, BackgroundRemovalError,
+  measureFromHandles, buildCutout, cropToHandles, dominantColors,
   type Handles, type MaskStats, type ShoePick,
 } from '../lib/cutout';
+import { processCapture, guessQuad, type CaptureResult } from '../lib/capture';
 import { PointStage, type StagePoint } from '../components/PointStage';
 import { Notice, NumField, TextField, Checkbox, Progress, SelectField, fmtIn } from '../components/ui';
 
 type Stage = 'pick' | 'working' | 'quad' | 'confirm';
+
+type ItemState = 'pending' | 'working' | 'ready' | 'failed' | 'saved' | 'skipped';
+
+/**
+ * One photo in the batch. A single capture is just a queue of one, so there is
+ * only ever one code path through the confirm screen.
+ */
+interface QueueItem {
+  id: string;
+  file: File;
+  label: string;
+  state: ItemState;
+  result: CaptureResult | null;
+  error: string | null;
+  /** Set when the target was not found, so the corners can be placed by hand. */
+  needsCorners: boolean;
+  thumbUrl: string | null;
+  savedName: string | null;
+}
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -42,6 +61,8 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
   const [src, setSrc] = useState<{ data: ImageData; url: string } | null>(null);
   const [quad, setQuad] = useState<[Pt, Pt, Pt, Pt] | null>(null);
   const [showCutout, setShowCutout] = useState(true);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [cursor, setCursor] = useState(0);
 
   // Draft pair fields
   const [name, setName] = useState('');
@@ -65,117 +86,194 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
     setPaperWarning(null); setName(''); setNickname(''); setTagsText('');
     setColors([]); setClassOverride('auto'); setShowCutout(true);
     setTypedLen(null); setTypedHeight(null);
+    setQueue([]); setCursor(0);
   }, []);
 
-  const runPipeline = useCallback(
-    async (source: ImageData, forcedQuad?: [Pt, Pt, Pt, Pt]) => {
-      setStage('working');
-      setError(null);
-      setPaperWarning(null);
-      try {
-        setStatus({ msg: 'Loading OpenCV.js…', frac: 0.05 });
-        let detected: [Pt, Pt, Pt, Pt];
-        let score: number | null = null;
-        if (forcedQuad) {
-          detected = forcedQuad;
-        } else {
-          setStatus({ msg: 'Looking for the sheet of paper…', frac: 0.15 });
-          const cand = await detectPaper(source, settings.paper);
-          detected = cand.quad;
-          score = cand.score;
-        }
+  /** Clears only the per-photo fields, so the next item in a batch starts fresh. */
+  const resetDraft = useCallback(() => {
+    setError(null); setPaperWarning(null);
+    setName(''); setNickname(''); setTagsText('');
+    setColors([]); setClassOverride('auto'); setShowCutout(true);
+    setTypedLen(null); setTypedHeight(null);
+    setQuad(null);
+  }, []);
 
-        setStatus({ msg: 'Correcting perspective…', frac: 0.3 });
-        const detection = await correctPerspective(source, detected, settings.paper, { detectionScore: score });
-        const correctedUrl = track(URL.createObjectURL(await imageDataToBlob(detection.corrected)));
-
-        const marginal = score !== null && score < PAPER_SCORE_FLOOR + 0.15;
-        if (detection.confidence < 0.8 || marginal) {
-          setPaperWarning(
-            [
-              marginal
-                ? `The detector was only ${Math.round(score! * 100)}% confident this shape is the sheet.`
-                : null,
-              detection.confidence < 0.8
-                ? `The shape it picked is only ${Math.round(detection.confidence * 100)}% rectangular.`
-                : null,
-              'Check the dashed outline below against the real sheet. If it is wrong, start over and place the corners by hand.',
-            ].filter(Boolean).join(' '),
-          );
-        }
-
-        setStatus({ msg: 'Removing the background…', frac: 0.45 });
-        let cutRgba: ImageData | null = null;
-        let bgFailed: string | null = null;
-        try {
-          cutRgba = await removeBackground(detection.corrected, (key, f) =>
-            setStatus({ msg: `Removing the background (${key})…`, frac: 0.45 + f * 0.4 }),
-          );
-        } catch (err) {
-          bgFailed = err instanceof BackgroundRemovalError ? err.message : String(err);
-        }
-
-        setStatus({ msg: 'Measuring…', frac: 0.9 });
-        // The sheet is almost always salient enough to survive background
-        // removal, so it is told apart from the shoe by where it is, not by
-        // what colour it is.
-        const picked: ShoePick = cutRgba
-          ? pickShoeComponent(
-              alphaComponents(cutRgba, { paperRect: detection.paperRect }),
-              true,
-            )
-          : { verdict: 'none', component: null };
-        const mask = picked.verdict === 'shoe' ? picked.component : null;
-        const handles: Handles = mask ? suggestHandles(mask) : defaultHandles(detection);
-
-        const cutUrl = cutRgba ? track(URL.createObjectURL(await imageDataToBlob(cutRgba))) : null;
-
-        setW({
-          source, detection, correctedUrl, cutRgba, cutUrl, mask,
-          pick: picked.verdict,
-          handles, handlesTouched: false, ppiOverride: null, bgFailed,
-        });
-        const seedSource = cutRgba ?? detection.corrected;
-        try {
-          const sample = cutRgba ? cutRgba : cropToHandles(seedSource, handles, detection.ppi);
-          setColors(dominantColors(sample, 3).map((c) => ({ hex: c.hex, weight: c.weight })));
-        } catch {
-          setColors([]);
-        }
-        setStatus(null);
-        setStage('confirm');
-      } catch (err) {
-        setStatus(null);
-        if (err instanceof PaperNotFoundError) {
-          setError(err.message);
-          setQuad(guessQuad(source));
-          setStage('quad');
-        } else {
-          setError(err instanceof Error ? err.message : String(err));
-          setStage('pick');
-        }
-      }
+  /** Puts one finished CaptureResult on screen for review. */
+  const showResult = useCallback(
+    async (result: CaptureResult) => {
+      resetDraft();
+      const correctedUrl = track(URL.createObjectURL(await imageDataToBlob(result.detection.corrected)));
+      const cutUrl = result.cutRgba
+        ? track(URL.createObjectURL(await imageDataToBlob(result.cutRgba)))
+        : null;
+      setW({
+        source: result.source,
+        detection: result.detection,
+        correctedUrl,
+        cutRgba: result.cutRgba,
+        cutUrl,
+        mask: result.mask,
+        pick: result.pick,
+        handles: result.handles,
+        handlesTouched: false,
+        ppiOverride: null,
+        bgFailed: result.bgFailed,
+      });
+      setColors(result.colors);
+      setPaperWarning(result.targetWarning);
+      setStatus(null);
+      setStage('confirm');
     },
-    [settings.paper],
+    [resetDraft],
   );
 
-  const onFile = useCallback(
-    async (file: File) => {
-      reset();
+  /** Re-runs one photo with corners the user placed by hand. */
+  const rerunWithCorners = useCallback(
+    async (source: ImageData, corners: [Pt, Pt, Pt, Pt], itemId: string | null) => {
+      setStage('working');
+      setStatus({ msg: 'Correcting perspective…', frac: 0.3 });
       try {
-        setStage('working');
-        setStatus({ msg: 'Reading the photo…', frac: 0.02 });
-        const data = await fileToImageData(file);
-        const url = track(URL.createObjectURL(file));
-        setSrc({ data, url });
-        await runPipeline(data);
+        const result = await processCapture(source, settings, {
+          forcedQuad: corners,
+          onProgress: (msg, frac) => setStatus({ msg, frac }),
+        });
+        if (itemId) {
+          setQueue((q) => q.map((it) =>
+            it.id === itemId ? { ...it, state: 'ready', result, needsCorners: false, error: null } : it));
+        }
+        await showResult(result);
       } catch (err) {
         setStatus(null);
         setError(err instanceof Error ? err.message : String(err));
         setStage('pick');
       }
     },
-    [reset, runPipeline],
+    [settings, showResult],
+  );
+
+  /**
+   * Runs the whole batch. Photos are processed one at a time on purpose:
+   * background removal is heavy, and several at once on a phone is a good way
+   * to have the tab killed.
+   */
+  const processFiles = useCallback(
+    async (files: File[]) => {
+      reset();
+      const items: QueueItem[] = files.map((file, i) => ({
+        id: `${Date.now()}-${i}`,
+        file,
+        label: file.name || `Photo ${i + 1}`,
+        state: 'pending',
+        result: null,
+        error: null,
+        needsCorners: false,
+        thumbUrl: null,
+        savedName: null,
+      }));
+      setQueue(items);
+      setStage('working');
+
+      const finished: QueueItem[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const prefix = files.length > 1 ? `Photo ${i + 1} of ${files.length}: ` : '';
+        setStatus({ msg: `${prefix}reading…`, frac: 0.02 });
+        setQueue((q) => q.map((it) => (it.id === item.id ? { ...it, state: 'working' } : it)));
+        try {
+          const source = await fileToImageData(item.file);
+          const thumbUrl = track(URL.createObjectURL(await makeThumbnail(downscale(source, 240), 240)));
+          const result = await processCapture(source, settings, {
+            onProgress: (msg, frac) =>
+              setStatus({ msg: prefix + msg.charAt(0).toLowerCase() + msg.slice(1), frac }),
+          });
+          const done: QueueItem = { ...item, state: 'ready', result, thumbUrl };
+          finished.push(done);
+          setQueue((q) => q.map((it) => (it.id === item.id ? done : it)));
+        } catch (err) {
+          const notFound = err instanceof PaperNotFoundError;
+          const done: QueueItem = {
+            ...item,
+            state: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+            needsCorners: notFound,
+          };
+          finished.push(done);
+          setQueue((q) => q.map((it) => (it.id === item.id ? done : it)));
+        }
+      }
+
+      const firstReady = finished.findIndex((it) => it.state === 'ready');
+      const firstAny = firstReady >= 0 ? firstReady : 0;
+      setCursor(firstAny);
+      const chosen = finished[firstAny];
+      if (chosen?.state === 'ready' && chosen.result) {
+        await showResult(chosen.result);
+      } else if (chosen) {
+        await openItem(chosen, finished);
+      } else {
+        setStage('pick');
+        setStatus(null);
+      }
+    },
+    // openItem is defined below and is stable for the lifetime of the component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reset, settings, showResult],
+  );
+
+  /** Switches the confirm screen to a different item in the batch. */
+  const openItem = useCallback(
+    async (item: QueueItem, all?: QueueItem[]) => {
+      const list = all ?? queue;
+      setCursor(Math.max(0, list.findIndex((it) => it.id === item.id)));
+      if (item.state === 'ready' && item.result) {
+        await showResult(item.result);
+        return;
+      }
+      if (item.needsCorners) {
+        // The target was not found in this photo, so ask for its corners.
+        const source = await fileToImageData(item.file);
+        setSrc({ data: source, url: track(URL.createObjectURL(item.file)) });
+        setQuad(guessQuad(source));
+        setError(item.error);
+        setStage('quad');
+        return;
+      }
+      setError(item.error ?? 'This photo could not be processed.');
+      setStage('pick');
+    },
+    [queue, showResult],
+  );
+
+  /** Moves to the next item still needing attention, or finishes the batch. */
+  const advance = useCallback(
+    async (fromId: string, mark: 'saved' | 'skipped', savedName?: string) => {
+      const next = queue.map((it) =>
+        it.id === fromId ? { ...it, state: mark, savedName: savedName ?? it.savedName } : it);
+      setQueue(next);
+      const remaining = next.filter((it) => it.state === 'ready' || it.state === 'failed');
+      if (!remaining.length) {
+        setW(null);
+        resetDraft();
+        setStage('pick');
+        return;
+      }
+      await openItem(remaining[0], next);
+    },
+    [queue, openItem, resetDraft],
+  );
+
+  const onFiles = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return;
+      try {
+        await processFiles(files);
+      } catch (err) {
+        setStatus(null);
+        setError(err instanceof Error ? err.message : String(err));
+        setStage('pick');
+      }
+    },
+    [processFiles],
   );
 
   const ppi = w ? (w.ppiOverride ?? w.detection?.ppi ?? 0) : 0;
@@ -283,6 +381,12 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
         updatedAt: Date.now(),
       };
       await savePair(pair);
+      const current = queue[cursor];
+      if (current && queue.length > 1) {
+        // Part of a batch: keep going rather than throwing the rest away.
+        await advance(current.id, 'saved', pair.name);
+        return;
+      }
       reset();
       onSaved(pairId);
     } catch (err) {
@@ -290,15 +394,22 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
       setStage('confirm');
       setStatus(null);
     }
-  }, [w, effective, ppi, name, nickname, tagsText, colors, finalClass, classOverride, addImage, savePair, reset, onSaved]);
+  }, [w, effective, ppi, name, nickname, tagsText, colors, finalClass, classOverride,
+      addImage, savePair, reset, onSaved, queue, cursor, advance]);
 
   // ---------------- render ----------------
 
   if (stage === 'working') {
     return (
       <div className="card">
-        <h2>Working…</h2>
+        <h2>{queue.length > 1 ? `Processing ${queue.length} photos…` : 'Working…'}</h2>
         {status ? <Progress label={status.msg} value={status.frac} /> : <p className="muted">Please wait.</p>}
+        {queue.length > 1 ? (
+          <p className="small muted">
+            One at a time on purpose — background removal is heavy, and several at once is a good way to have a phone
+            browser kill the tab. You can leave this running.
+          </p>
+        ) : null}
         <p className="small muted">
           The first capture downloads the OpenCV and background-removal assets. Later ones are much quicker.
         </p>
@@ -316,7 +427,7 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
         error={error}
         paper={settings.paper}
         onCancel={reset}
-        onConfirm={(q) => { setQuad(q); void runPipeline(src.data, q); }}
+        onConfirm={(q) => { setQuad(q); void rerunWithCorners(src.data, q, queue[cursor]?.id ?? null); }}
       />
     );
   }
@@ -340,6 +451,41 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
             <span className="spacer" />
             <button className="sm" onClick={reset}>Start over</button>
           </div>
+
+          {queue.length > 1 ? (
+            <div style={{ marginBottom: '.6rem' }}>
+              <div className="row tight small" style={{ marginBottom: '.35rem' }}>
+                <strong>Photo {cursor + 1} of {queue.length}</strong>
+                <span className="muted">
+                  {queue.filter((it) => it.state === 'saved').length} saved ·{' '}
+                  {queue.filter((it) => it.state === 'skipped').length} skipped ·{' '}
+                  {queue.filter((it) => it.state === 'ready' || it.state === 'failed').length} to go
+                </span>
+                <span style={{ marginLeft: 'auto' }} />
+                <button
+                  className="sm"
+                  onClick={() => { const c = queue[cursor]; if (c) void advance(c.id, 'skipped'); }}
+                >
+                  Skip this one
+                </button>
+              </div>
+              <div className="row tight" style={{ overflowX: 'auto', paddingBottom: '.2rem' }}>
+                {queue.map((it, i) => (
+                  <button
+                    key={it.id}
+                    className="chip"
+                    aria-pressed={i === cursor}
+                    title={`${it.label} — ${it.state}`}
+                    style={{ opacity: it.state === 'saved' || it.state === 'skipped' ? 0.5 : 1 }}
+                    onClick={() => void openItem(it)}
+                  >
+                    {it.state === 'saved' ? '✓ ' : it.state === 'failed' ? '⚠ ' : it.state === 'skipped' ? '– ' : ''}
+                    {it.savedName ?? i + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {error ? <Notice kind="bad">{error}</Notice> : null}
           {paperWarning ? <Notice kind="warn" title="Check the scale">{paperWarning}</Notice> : null}
@@ -555,21 +701,37 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
         </ol>
         {error ? <Notice kind="bad" title="That did not work">{error}</Notice> : null}
         <label className="btn primary" style={{ width: '100%' }}>
-          Take or choose a photo
+          Choose photos — as many as you like
+          <input
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = '';
+              void onFiles(files);
+            }}
+          />
+        </label>
+        <label className="btn" style={{ width: '100%', marginTop: '.4rem' }}>
+          Take one with the camera
           <input
             className="visually-hidden"
             type="file"
             accept="image/*"
             capture="environment"
             onChange={(e) => {
-              const f = e.target.files?.[0];
+              const files = Array.from(e.target.files ?? []);
               e.target.value = '';
-              if (f) void onFile(f);
+              void onFiles(files);
             }}
           />
         </label>
         <p className="small muted" style={{ marginTop: '.5rem' }}>
-          Everything runs on this device. Nothing is uploaded.
+          Shoot the whole lot in one go, then pick them all here. They are processed one at a time and queued up for
+          review, so you confirm each in turn without going back to the camera. Everything runs on this device and
+          nothing is uploaded.
         </p>
       </div>
       <div className="card">
@@ -589,25 +751,7 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
   );
 }
 
-function guessQuad(img: ImageData): [Pt, Pt, Pt, Pt] {
-  const mx = img.width * 0.25, my = img.height * 0.25;
-  return [
-    { x: mx, y: my },
-    { x: img.width - mx, y: my },
-    { x: img.width - mx, y: img.height - my },
-    { x: mx, y: img.height - my },
-  ];
-}
 
-function defaultHandles(d: PaperDetection): Handles {
-  const r = d.paperRect;
-  return {
-    heel: { x: r.x + r.w * 0.2, y: r.y + r.h * 0.6 },
-    toe: { x: r.x + r.w * 0.8, y: r.y + r.h * 0.6 },
-    sole: { x: r.x + r.w * 0.5, y: r.y + r.h * 0.75 },
-    collar: { x: r.x + r.w * 0.5, y: r.y + r.h * 0.4 },
-  };
-}
 
 function QuadFixer({
   source, sourceUrl, quad, error, paper, onCancel, onConfirm,

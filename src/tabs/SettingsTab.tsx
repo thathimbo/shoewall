@@ -115,7 +115,7 @@ export function SettingsTab() {
       <div className="card">
         <h2>Capture</h2>
         <SelectField
-          label="Paper used for scale"
+          label="Reference target used for scale"
           value={paperKey}
           options={PAPERS.map((p) => ({ value: p.value, label: p.label }))}
           onChange={(v) => {
@@ -124,12 +124,18 @@ export function SettingsTab() {
             saveSettings({ ...settings, paper: { widthIn: p.w, heightIn: p.h, label: p.label.split(' —')[0] } });
           }}
         />
+        <GridfinityHelper
+          onApply={(widthIn, heightIn, label) =>
+            saveSettings({ ...settings, paper: { widthIn, heightIn, label } })
+          }
+        />
+
         <div className="grid2" style={{ marginTop: '.5rem' }}>
-          <NumField label="Paper width" value={settings.paper.widthIn} step={0.01} min={1}
+          <NumField label="Target width" value={settings.paper.widthIn} step={0.01} min={1}
             onChange={(v) => v !== null && saveSettings({ ...settings, paper: { ...settings.paper, widthIn: v } })} />
-          <NumField label="Paper height" value={settings.paper.heightIn} step={0.01} min={1}
+          <NumField label="Target height" value={settings.paper.heightIn} step={0.01} min={1}
             onChange={(v) => v !== null && saveSettings({ ...settings, paper: { ...settings.paper, heightIn: v } })} />
-          <TextField label="Paper label" value={settings.paper.label}
+          <TextField label="Target name" value={settings.paper.label}
             onChange={(v) => saveSettings({ ...settings, paper: { ...settings.paper, label: v } })} />
         </div>
 
@@ -214,6 +220,50 @@ export function SettingsTab() {
         </p>
       </div>
     </>
+  );
+}
+
+/**
+ * Gridfinity baseplates make a far better reference target than a blank sheet:
+ * the size is exact, it is rigid, and it does not curl. The grid pitch is 42 mm
+ * by the Gridfinity standard, but it is editable in case a plate was printed to
+ * something else. Butt two plates together and count the cells across the pair.
+ */
+function GridfinityHelper({
+  onApply,
+}: { onApply: (widthIn: number, heightIn: number, label: string) => void }) {
+  const [across, setAcross] = useState<number | null>(null);
+  const [down, setDown] = useState<number | null>(null);
+  const [pitchMm, setPitchMm] = useState<number | null>(42);
+
+  const ok = across !== null && down !== null && pitchMm !== null && across > 0 && down > 0 && pitchMm > 0;
+  const widthIn = ok ? (across * pitchMm) / 25.4 : null;
+  const heightIn = ok ? (down * pitchMm) / 25.4 : null;
+
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '.6rem', marginTop: '.6rem' }}>
+      <h4 className="small" style={{ margin: '0 0 .3rem' }}>Using Gridfinity baseplates?</h4>
+      <p className="small muted" style={{ margin: '0 0 .5rem' }}>
+        Count the cells across the whole arrangement, including both plates if you have butted two together.
+      </p>
+      <div className="grid3">
+        <NumField label="Cells across" unit={null} step={1} min={1} value={across} onChange={setAcross} />
+        <NumField label="Cells down" unit={null} step={1} min={1} value={down} onChange={setDown} />
+        <NumField label="Grid pitch" unit="mm" step={0.5} min={1} value={pitchMm} onChange={setPitchMm} />
+      </div>
+      <div className="row" style={{ marginTop: '.5rem' }}>
+        <button
+          className="sm"
+          disabled={!ok}
+          onClick={() => onApply(widthIn!, heightIn!, `Gridfinity ${across}×${down}`)}
+        >
+          Use as the target
+        </button>
+        <span className="small mono muted">
+          {ok ? `${widthIn!.toFixed(2)}" × ${heightIn!.toFixed(2)}"` : 'fill all three'}
+        </span>
+      </div>
+    </div>
   );
 }
 

@@ -76,24 +76,44 @@ this app invents a measurement.
 
 ## Working through it
 
-### 1. Capture — one photo per pair
+### 1. Capture — one photo per pair, a batch at a time
 
-1. Lay one shoe on its side on a sheet of US Letter, **or right beside it**.
-   A men's 15 is longer than the sheet, which is fine either way.
-2. Shoot from directly above with the whole sheet in frame.
+1. Put the reference target on the floor and lay one shoe on its side
+   **right beside it — not on it**. A sheet of US Letter works; Gridfinity
+   baseplates work better, being exact, rigid and flat. Settings → Capture has
+   a helper: count the cells across and down and it works out the size at the
+   42 mm Gridfinity pitch.
+2. Shoot from directly above, with the whole target and the whole shoe in frame.
 3. Check the measurements, then save.
+
+**Do the whole lot in one go.** Photograph every pair first, then pick them all
+at once on the Capture tab. They are processed one at a time — background
+removal is heavy enough that several at once will get a phone browser to kill
+the tab — and queued for review, so you confirm each in turn without going back
+to the camera. Skip any that misbehave and come back to them.
+
+**Why beside, not on.** The target sets the scale either way. But background
+removal keeps the target as well as the shoe, and colour cannot tell them apart
+— a cream midsole is about 5 CIEDE2000 units from copy paper, and white leather
+about 2. Beside the target, the two come back as separate shapes and the app
+picks the right one from the target's known position: against a test photo that
+lands within **0.2% on length and 0.8% on height**, with no handling at all. On
+the target, the two merge into one blob, and the app says so and leaves the
+handles to you rather than quietly measuring the target.
 
 What happens to the photo:
 
-- **OpenCV.js finds the sheet** and corrects the perspective. The sheet is the
+- **OpenCV.js finds the target** and corrects the perspective. The target is the
   only object of known size in the picture, so it is what turns pixels into
-  inches. Candidates are scored on size, how much lighter they are than the
-  surface around them, how close their proportions are to the paper, and how
+  inches. Candidates are scored on size, how far their tone sits from the
+  surface around them — in either direction, so a dark baseplate reads as well
+  as white paper — how close their proportions are to the target, and how
   rectangular they are — because the photo's own border is usually the biggest
   four-sided shape in an edge map, and a shoe lying across the sheet breaks its
-  outline in two. **If no sheet is found it says so and lets you place the four
+  outline in two. **If no target is found it says so and lets you place the four
   corners by hand.** It never guesses a scale.
-- **The background is removed** in the browser to get a clean cutout.
+- **The background is removed** in the browser to get a clean cutout. The target
+  is told apart from the shoe by where it is, never by what colour it is.
 - **You confirm the measurements** on a screen with four draggable handles —
   heel, toe, sole, collar. Drag with a finger or a mouse, or nudge a selected
   handle with the arrow keys (Shift for bigger steps). The pair is marked
