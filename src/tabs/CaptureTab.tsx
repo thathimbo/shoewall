@@ -49,6 +49,10 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
   const [tagsText, setTagsText] = useState('');
   const [colors, setColors] = useState<Swatch[]>([]);
   const [classOverride, setClassOverride] = useState<'auto' | 'low' | 'mid' | 'high'>('auto');
+  // Typed from a tape measure. Always available, and always wins — no photo
+  // pipeline beats a tape against the actual shoe.
+  const [typedLen, setTypedLen] = useState<number | null>(null);
+  const [typedHeight, setTypedHeight] = useState<number | null>(null);
 
   const urls = useRef<string[]>([]);
   const track = (u: string) => { urls.current.push(u); return u; };
@@ -60,6 +64,7 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
     setW(null); setSrc(null); setQuad(null); setStage('pick'); setStatus(null); setError(null);
     setPaperWarning(null); setName(''); setNickname(''); setTagsText('');
     setColors([]); setClassOverride('auto'); setShowCutout(true);
+    setTypedLen(null); setTypedHeight(null);
   }, []);
 
   const runPipeline = useCallback(
@@ -179,7 +184,37 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
     [w, ppi],
   );
 
-  const autoClass = measurement ? classifyHeight(measurement.heightIn, settings.heightClass) : null;
+  /**
+   * The handles only mean something once they are actually on the shoe. When
+   * the outline was not found they start on the sheet's edges, and those
+   * numbers describe the sheet, not the shoe — so they are not offered as a
+   * measurement until the user has moved them.
+   */
+  const handlesTrusted = !!w && (w.pick === 'shoe' || w.handlesTouched);
+  const typed = typedLen !== null && typedHeight !== null && typedLen > 0 && typedHeight > 0;
+  const effective: { lengthIn: number; heightIn: number; typed: boolean } | null = typed
+    ? { lengthIn: typedLen, heightIn: typedHeight, typed: true }
+    : handlesTrusted && measurement
+      ? { lengthIn: measurement.lengthIn, heightIn: measurement.heightIn, typed: false }
+      : null;
+
+  /**
+   * A last line of defence. Everything upstream can be wrong at once — the
+   * detector locks onto a floor tile, a stray pixels-per-inch override, a
+   * handle left on the sheet — and the result still looks like a number. Shoes
+   * have a known range, so say so plainly when the answer leaves it.
+   */
+  const implausible = (() => {
+    if (!effective) return null;
+    const { lengthIn: l, heightIn: h } = effective;
+    if (!Number.isFinite(l) || !Number.isFinite(h)) return 'The measurement did not come out as a number.';
+    if (l < 5 || l > 20) return `${l.toFixed(1)}" heel-to-toe is outside the 5–20" a real shoe falls in.`;
+    if (h < 1.5 || h > 12) return `${h.toFixed(1)}" sole-to-collar is outside the 1.5–12" a real shoe falls in.`;
+    if (h > l) return `It says the shoe is taller (${h.toFixed(1)}") than it is long (${l.toFixed(1)}").`;
+    return null;
+  })();
+
+  const autoClass = effective ? classifyHeight(effective.heightIn, settings.heightClass) : null;
   const finalClass = classOverride === 'auto' ? autoClass : classOverride;
 
   const setHandle = useCallback((key: string, x: number, y: number) => {
@@ -200,7 +235,7 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
   }, [w, ppi]);
 
   const save = useCallback(async () => {
-    if (!w || !w.detection || !measurement || ppi <= 0) return;
+    if (!w || !w.detection || !effective || ppi <= 0) return;
     if (!name.trim()) { setError('Give the pair a name before saving.'); return; }
     setStage('working');
     setStatus({ msg: 'Saving…', frac: 0.3 });
@@ -228,11 +263,11 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
         nickname: nickname.trim() || undefined,
         tags: tagsText.split(',').map((t) => t.trim()).filter(Boolean),
         measurement: {
-          lengthIn: measurement.lengthIn,
-          heightIn: measurement.heightIn,
+          lengthIn: effective.lengthIn,
+          heightIn: effective.heightIn,
           ppi,
-          source: w.ppiOverride !== null ? 'manual-ppi' : 'paper-detected',
-          adjustedByHand: w.handlesTouched,
+          source: effective.typed ? 'typed' : w.ppiOverride !== null ? 'manual-ppi' : 'paper-detected',
+          adjustedByHand: w.handlesTouched || effective.typed,
         },
         heightClass: finalClass,
         heightClassManual: classOverride !== 'auto',
@@ -255,7 +290,7 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
       setStage('confirm');
       setStatus(null);
     }
-  }, [w, measurement, ppi, name, nickname, tagsText, colors, finalClass, classOverride, addImage, savePair, reset, onSaved]);
+  }, [w, effective, ppi, name, nickname, tagsText, colors, finalClass, classOverride, addImage, savePair, reset, onSaved]);
 
   // ---------------- render ----------------
 
@@ -379,16 +414,62 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
 
         <div className="card">
           <h3>Measurements</h3>
+          {implausible ? (
+            <Notice kind="bad" title="That is not the size of a shoe">
+              {implausible} Something upstream is wrong — most likely the scale. Check the dashed outline is on the
+              sheet, check the pixels-per-inch box below is empty or right, or type the real numbers off a tape.
+            </Notice>
+          ) : null}
+          {!effective ? (
+            <Notice kind="warn" title="Not measured yet">
+              The shoe's outline was not found, so the handles are still sitting on the sheet — anything they report
+              would be the sheet's size, not the shoe's. Drag all four onto the shoe, or just type the numbers off a
+              tape measure below. A tape is exact and takes about ten seconds.
+            </Notice>
+          ) : null}
           <dl className="kv">
-            <dt>Length (heel→toe)</dt><dd className="mono">{fmtIn(measurement?.lengthIn)}</dd>
-            <dt>Height (sole→collar)</dt><dd className="mono">{fmtIn(measurement?.heightIn)}</dd>
+            <dt>Length (heel→toe)</dt>
+            <dd className="mono">{effective ? fmtIn(effective.lengthIn) : <span className="pill warn">not measured</span>}</dd>
+            <dt>Height (sole→collar)</dt>
+            <dd className="mono">{effective ? fmtIn(effective.heightIn) : <span className="pill warn">not measured</span>}</dd>
+            <dt>From</dt>
+            <dd>
+              {!effective ? <span className="muted">—</span>
+                : effective.typed ? <span className="pill good">your tape measure</span>
+                : w.handlesTouched ? <span className="pill good">handles, adjusted by hand</span>
+                : <span className="pill">the photo</span>}
+            </dd>
             <dt>Loaded bracket</dt>
             <dd className="mono">
-              {measurement
-                ? `${(measurement.lengthIn * 2).toFixed(2)}" wide × ${(measurement.heightIn * 2 + settings.hardware.pairGapIn).toFixed(2)}" tall (two of these pairs)`
+              {effective
+                ? `${(effective.lengthIn * 2).toFixed(2)}" wide × ${(effective.heightIn * 2 + settings.hardware.pairGapIn).toFixed(2)}" tall (two of these pairs)`
                 : '—'}
             </dd>
           </dl>
+
+          <h4 className="small muted" style={{ marginTop: '.7rem' }}>Type it off a tape measure</h4>
+          <p className="small muted">
+            Fill both in and they override the photo entirely. This is the reliable route — use it whenever the
+            outline looks wrong, or just use it always.
+          </p>
+          <div className="grid2">
+            <NumField
+              label="Length (heel→toe)" step={0.05} min={0} value={typedLen}
+              onChange={setTypedLen}
+              placeholder={measurement ? measurement.lengthIn.toFixed(2) : ''}
+            />
+            <NumField
+              label="Height (sole→collar)" step={0.05} min={0} value={typedHeight}
+              onChange={setTypedHeight}
+              placeholder={measurement ? measurement.heightIn.toFixed(2) : ''}
+            />
+          </div>
+          {typed ? (
+            <button className="sm ghost" style={{ marginTop: '.4rem' }}
+              onClick={() => { setTypedLen(null); setTypedHeight(null); }}>
+              Clear typed numbers and go back to the photo
+            </button>
+          ) : null}
           <div className="grid2" style={{ marginTop: '.5rem' }}>
             <NumField
               label="Pixels per inch (override)"
@@ -451,7 +532,7 @@ export function CaptureTab({ onSaved }: { onSaved: (pairId: string) => void }) {
             Brand, model, style code and the rest live on the Catalog tab — nothing is filled in from the photo.
           </p>
           <div className="row" style={{ marginTop: '.5rem' }}>
-            <button className="primary" onClick={save} disabled={!name.trim() || !measurement}>Save pair</button>
+            <button className="primary" onClick={save} disabled={!name.trim() || !effective}>Save pair</button>
             <button onClick={reset}>Discard</button>
           </div>
         </div>

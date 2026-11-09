@@ -57,6 +57,12 @@ export interface MaskComponent {
   fill: number;
   /** Share of this component's pixels that fall inside the paper rectangle. */
   paperOverlap: number;
+  /**
+   * Share of the PAPER that this component covers. This is the one that says
+   * "this blob contains the sheet": a shoe lying on the sheet covers only part
+   * of it, while the sheet itself, or the sheet fused with a shoe, covers all.
+   */
+  paperCoverage: number;
   /** A mask of just this component, 1 byte per pixel, row-major. */
   mask: Uint8Array;
   width: number;
@@ -138,9 +144,11 @@ export function alphaComponents(
       if (pr && x >= pr.x && x < pr.x + pr.w && y >= pr.y && y < pr.y + pr.h) inPaper++;
     }
     const boxArea = Math.max(1, (x1 - x0 + 1) * (y1 - y0 + 1));
+    const paperArea = pr ? Math.max(1, pr.w * pr.h) : 1;
     out.push({
       bbox: { x0, y0, x1, y1 }, area: n, fill: n / boxArea,
       paperOverlap: pr ? inPaper / n : 0,
+      paperCoverage: pr ? Math.min(1, inPaper / paperArea) : 0,
       mask, width: w, height: h, extremes: { left, right, top, bottom },
     });
   }
@@ -172,12 +180,15 @@ export function pickShoeComponent(components: MaskComponent[], hasPaperRect: boo
   if (!components.length) return { verdict: 'none', component: null };
   if (!hasPaperRect) return { verdict: 'shoe', component: components[0] };
 
-  const isSheetLike = (c: MaskComponent) => c.paperOverlap > 0.9 && c.fill > 0.85;
-  const clear = components.filter((c) => !isSheetLike(c) && c.paperOverlap < 0.9);
+  // The question is not "does this sit on the sheet" — a shoe laid on the sheet
+  // does, and is still the shoe. It is "does this blob CONTAIN the sheet".
+  // Only something covering nearly all of the sheet does: the bare sheet, or
+  // the sheet fused with the shoe.
+  const containsSheet = (c: MaskComponent) => c.paperCoverage > 0.85;
+  const clear = components.filter((c) => !containsSheet(c));
   if (clear.length) return { verdict: 'shoe', component: clear[0] };
 
-  const merged = components.find((c) => c.fill > 0.8) ?? components[0];
-  return { verdict: 'merged-with-paper', component: merged };
+  return { verdict: 'merged-with-paper', component: components[0] };
 }
 
 /** Back-compatible helper: the largest component, ignoring the sheet question. */
