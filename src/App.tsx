@@ -108,6 +108,7 @@ function Shell() {
             clearHighlight={() => setHighlightPairId(null)}
             goWalls={() => setTab('walls')}
             goCapture={() => setTab('capture')}
+            goInstall={() => setTab('install')}
           />
         ) : tab === 'install' ? (
           <InstallTab goLayout={() => setTab('layout')} goSettings={() => setTab('settings')} />

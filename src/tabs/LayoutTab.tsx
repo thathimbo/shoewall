@@ -6,14 +6,16 @@ import { WallMockup, type SlotAddress } from '../components/WallMockup';
 import { PairThumb } from '../components/PairThumb';
 import { Notice, NumField, Checkbox, Swatches, fmtIn } from '../components/ui';
 import { paletteDistance } from '../lib/color';
+import { QuickPlan } from '../components/QuickPlan';
 
 export function LayoutTab({
-  highlightPairId, clearHighlight, goWalls, goCapture,
+  highlightPairId, clearHighlight, goWalls, goCapture, goInstall,
 }: {
   highlightPairId: string | null;
   clearHighlight: () => void;
   goWalls: () => void;
   goCapture: () => void;
+  goInstall: () => void;
 }) {
   const { pairs, walls, settings, saveSettings, layout, setLayout } = useStore();
   const [pattern, setPattern] = useState<PatternMode>(layout?.pattern ?? 'grid');
@@ -23,6 +25,7 @@ export function LayoutTab({
   const [zoom, setZoom] = useState(4);
   const [blockers, setBlockers] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [quick, setQuick] = useState(false);
 
   const byId = useMemo(() => new Map(pairs.map((p) => [p.id, p] as const)), [pairs]);
 
@@ -68,10 +71,25 @@ export function LayoutTab({
       })
     : false;
 
+  if (quick) {
+    return (
+      <>
+        <QuickPlan onDone={() => { setQuick(false); goInstall(); }} />
+        <div className="card">
+          <button onClick={() => setQuick(false)}>Back to the full generator</button>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <div className="card">
-        <h2>Layout generator</h2>
+        <div className="card-head">
+          <h2>Layout generator</h2>
+          <span className="spacer" />
+          <button className="sm" onClick={() => setQuick(true)}>Quick plan, no photos</button>
+        </div>
 
         {blockers.length ? (
           <Notice kind="bad" title="Cannot generate yet">
