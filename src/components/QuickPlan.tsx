@@ -77,11 +77,13 @@ export function QuickPlan({ onDone }: { onDone: () => void }) {
         name: `Wall ${i + 1}`,
         widthIn: wallWidthIn,
         bandBottomIn, bandTopIn,
-        // A continuous run: each wall meets the next at a corner, and the two
-        // sides of each corner take opposite phases so their rows interlock
-        // rather than one wall losing a strip all the way up.
-        left: { isCorner: i > 0, keepsClear: true, interlock: true },
-        right: { isCorner: i < wallCount - 1, keepsClear: false, interlock: true },
+        // A continuous run: each wall meets the next at a corner, and the
+        // later wall yields the clearance so the shoes do not collide.
+        // Interlocking row by row is off: it slides alternate rows sideways,
+        // which breaks the column grid and makes the wall read as a diamond
+        // lattice of separate objects rather than a continuous surface.
+        left: { isCorner: i > 0, keepsClear: true },
+        right: { isCorner: i < wallCount - 1, keepsClear: false },
         maxColumns: i === 0 ? (firstWallColumns ?? null) : null,
       }));
 

@@ -69,8 +69,13 @@ export function InstallTab({ goLayout, goSettings }: { goLayout: () => void; goS
         <Notice kind="warn" title="Anchors">{TOGGLE_ANCHOR_NOTE}</Notice>
         <p className="small muted">
           X is measured from the left edge of each wall; Y from the floor. Both refer to the centre of the{' '}
-          {settings.hardware.plateSizeIn}" × {settings.hardware.plateSizeIn}" mounting plate. Heels face the bracket
-          centre, so the left-arm pair's toe points left and the right-arm pair's toe points right.
+          {settings.hardware.plateSizeIn}" × {settings.hardware.plateSizeIn}" mounting plate.
+        </p>
+        <p className="small muted">
+          <strong>The Load column matters.</strong> “Heels in” puts both heels at the bracket centre with the toes
+          pointing out; “toes in” is the other way round. They alternate like a checkerboard so every toe meets a
+          heel — without that, toe meets toe and the wall gets a diamond-shaped hole above and below each junction.
+          It changes nothing about where you drill, only which way the shoes face.
         </p>
       </div>
 
@@ -107,8 +112,9 @@ export function InstallTab({ goLayout, goSettings }: { goLayout: () => void; goS
                     <th className="nowrap">Plate X</th>
                     <th className="nowrap">Plate Y</th>
                     <th className="nowrap">Arm top Y</th>
-                    <th>Left arm (toe points left)</th>
-                    <th>Right arm (toe points right)</th>
+                    <th>Load</th>
+                    <th>Left arm</th>
+                    <th>Right arm</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -123,6 +129,11 @@ export function InstallTab({ goLayout, goSettings }: { goLayout: () => void; goS
                           : `${plateY(b.armTopYIn)!.toFixed(2)}"`}
                       </td>
                       <td className="mono nowrap">{b.armTopYIn.toFixed(2)}"</td>
+                      <td className="nowrap">
+                        {b.toesIn
+                          ? <span className="pill">toes in →←</span>
+                          : <span className="pill good">heels in ←→</span>}
+                      </td>
                       <td>{label(b.leftPairId)}</td>
                       <td>{label(b.rightPairId)}</td>
                     </tr>

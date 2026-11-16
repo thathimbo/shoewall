@@ -213,6 +213,8 @@ function BracketGroup({
         const addr: SlotAddress = { wallIndex: wall.wallIndex, bracketNumber: b.number, arm };
         const pair = pairId ? byId.get(pairId) : undefined;
         const m = pair?.measurement;
+        // Which end of its half the shoe's heel sits at. The span is the same
+        // either way; only the orientation changes.
         const dir = arm === 'left' ? -1 : 1;
         const heelX = b.plateXIn + dir * heelInset;
         const L = m?.lengthIn ?? 0;
@@ -248,12 +250,12 @@ function BracketGroup({
             {/* shoe standing on the arm */}
             <ShoeImage
               pair={pair} x={x0} y={toScreenY(b.armTopYIn + H)} w={L} h={H}
-              flipX={arm === 'left'} flipY={false}
+              flipX={b.toesIn ? arm === 'right' : arm === 'left'} flipY={false}
             />
             {/* mirrored shoe hanging below */}
             <ShoeImage
               pair={pair} x={x0} y={toScreenY(b.armTopYIn - gap)} w={L} h={H}
-              flipX={arm === 'left'} flipY
+              flipX={b.toesIn ? arm === 'right' : arm === 'left'} flipY
             />
             <rect
               x={x0} y={toScreenY(b.armTopYIn + H)} width={L} height={2 * H + gap}

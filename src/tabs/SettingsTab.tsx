@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { Notice, NumField, TextField, SelectField, fmtIn } from '../components/ui';
+import { Notice, NumField, TextField, SelectField, Checkbox, fmtIn } from '../components/ui';
 import { DEFAULT_SETTINGS } from '../lib/defaults';
 import { buildProjectFile, parseProjectFile } from '../lib/exports';
 import { downloadBlob } from '../lib/csv';
@@ -160,6 +160,20 @@ export function SettingsTab() {
           <NumField label="Mid is up to" value={settings.heightClass.midMaxIn} step={0.25} min={0}
             onChange={(v) => v !== null && saveSettings({ ...settings, heightClass: { ...settings.heightClass, midMaxIn: v } })} />
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Pattern</h2>
+        <Checkbox
+          label="Alternate which way the shoes face, like a checkerboard"
+          checked={settings.alternateToeDirection}
+          onChange={(v) => saveSettings({ ...settings, alternateToeDirection: v })}
+        />
+        <p className="small muted">
+          A shoe is fat at the heel and tapers to a point at the toe. Load every bracket the same way and each one
+          is a bowtie, so toe meets toe between brackets and the wall fills with diamond-shaped holes. Alternating
+          means every toe meets a heel and the wall reads as one surface. It changes nothing about where you drill.
+        </p>
       </div>
 
       <div className="card">

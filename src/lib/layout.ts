@@ -57,34 +57,6 @@ function emptyArmExtent(s: Settings): number {
 }
 
 /**
- * Does this end give up its clearance on this row?
- *
- * Without interlock the answer is the same for every row. With it, the two
- * walls meeting at a corner take turns: one yields on even rows from the top,
- * the other on odd ones, so their rows weave through the corner instead of one
- * wall losing a strip all the way up.
- */
-export function endYieldsOnRow(end: Wall['left'], rowFromTop: number): boolean {
-  if (!end.isCorner) return false;
-  if (!end.interlock) return end.keepsClear;
-  return end.keepsClear ? rowFromTop % 2 === 0 : rowFromTop % 2 === 1;
-}
-
-/**
- * The X span available to one row. At an interlocking corner this alternates,
- * so it is wider on the rows this wall owns.
- */
-export function rowXRange(
-  wall: Wall, s: Settings, rowFromTop: number,
-): { x0: number; x1: number } {
-  const c = s.spacing.cornerClearanceIn;
-  return {
-    x0: endYieldsOnRow(wall.left, rowFromTop) ? c : 0,
-    x1: wall.widthIn - (endYieldsOnRow(wall.right, rowFromTop) ? c : 0),
-  };
-}
-
-/**
  * The span every row is guaranteed, with the clearance taken off at each
  * corner end regardless of whose turn it is. Rows are packed against this so
  * one can never overflow; the ones that own a corner simply gain slack, which
@@ -92,8 +64,8 @@ export function rowXRange(
  */
 export function usableXRange(wall: Wall, s: Settings): { x0: number; x1: number } {
   const c = s.spacing.cornerClearanceIn;
-  const x0 = wall.left.isCorner && (wall.left.keepsClear || wall.left.interlock) ? c : 0;
-  const x1 = wall.widthIn - (wall.right.isCorner && (wall.right.keepsClear || wall.right.interlock) ? c : 0);
+  const x0 = wall.left.isCorner && wall.left.keepsClear ? c : 0;
+  const x1 = wall.widthIn - (wall.right.isCorner && wall.right.keepsClear ? c : 0);
   return { x0, x1 };
 }
 
@@ -108,15 +80,10 @@ export function usableXRange(wall: Wall, s: Settings): { x0: number; x1: number 
  *
  * A row with no corner at either end is centred, so its margins match.
  */
-export function rowStartX(
-  wall: Wall, s: Settings, rowFromTop: number, contentWidth: number,
-): number {
-  const range = rowXRange(wall, s, rowFromTop);
-  const ownsLeft = wall.left.isCorner && !endYieldsOnRow(wall.left, rowFromTop);
-  const ownsRight = wall.right.isCorner && !endYieldsOnRow(wall.right, rowFromTop);
-  if (ownsLeft) return range.x0;
-  if (ownsRight) return range.x1 - contentWidth;
-  // Yields its corner: stay beside it rather than drifting to the middle.
+export function rowStartX(wall: Wall, s: Settings, contentWidth: number): number {
+  const range = usableXRange(wall, s);
+  // Sit against a corner if there is one, so the run reads as continuing round
+  // it; otherwise centre so the margins match.
   if (wall.left.isCorner) return range.x0;
   if (wall.right.isCorner) return range.x1 - contentWidth;
   return range.x0 + (range.x1 - range.x0 - contentWidth) / 2;
@@ -143,16 +110,27 @@ interface WallPlan {
   warnings: string[];
 }
 
-function rowWidth(pairIds: string[], byId: Map<string, Pair>, s: Settings): number {
-  const n = Math.ceil(pairIds.length / 2);
-  if (n === 0) return 0;
-  let sum = 0;
-  for (let b = 0; b < n; b++) {
-    const l = pairIds[b * 2], r = pairIds[b * 2 + 1];
-    sum += l ? armExtent(byId.get(l)!.measurement!.lengthIn, s) : emptyArmExtent(s);
-    sum += r ? armExtent(byId.get(r)!.measurement!.lengthIn, s) : emptyArmExtent(s);
+/**
+ * One bracket width for the whole wall, wide enough for the longest pair.
+ *
+ * Letting each bracket be only as wide as its own shoes made every row start
+ * somewhere different, so the columns zigzagged and the wall read as scattered
+ * objects rather than a surface. A single pitch puts every plate on the same
+ * vertical line, which is what makes it a repeating pattern.
+ */
+function uniformBracketWidth(pairs: Pair[], s: Settings): number {
+  let widest = s.hardware.bracketWidthIn / 2;
+  for (const p of pairs) {
+    if (!p.measurement) continue;
+    widest = Math.max(widest, armExtent(p.measurement.lengthIn, s));
   }
-  return sum + s.spacing.toeGapIn * (n - 1);
+  return widest * 2;
+}
+
+function rowWidth(pairIds: string[], byId: Map<string, Pair>, s: Settings, bracketW: number): number {
+  const n = Math.ceil(pairIds.length / 2);
+  void byId;
+  return n === 0 ? 0 : n * bracketW + s.spacing.toeGapIn * (n - 1);
 }
 
 function rowHeightFor(maxHeightIn: number, s: Settings): number {
@@ -223,6 +201,11 @@ export function generateLayout(input: GenerateInput): GenerateResult {
     };
   });
 
+  // One bracket width and one column pitch for the whole set, so every plate
+  // on every wall lands on the same vertical line.
+  const bracketW = uniformBracketWidth(eligible, s);
+  const pitch = bracketW + s.spacing.toeGapIn;
+
   const bracketBudget = s.bracketCount;
   let bracketsUsed = 0;
 
@@ -257,7 +240,7 @@ export function generateLayout(input: GenerateInput): GenerateResult {
       while (queue.length) {
         const candidate = queue[0];
         const trial = [...picked, candidate.id];
-        if (rowWidth(trial, byId, s) > usableW + 1e-9) break;
+        if (rowWidth(trial, byId, s, bracketW) > usableW + 1e-9) break;
         const neededForRow = Math.ceil(trial.length / 2);
         if (plan.wall.maxColumns !== null && neededForRow > plan.wall.maxColumns) break;
         if (bracketBudget !== null && bracketsUsed + neededForRow > bracketBudget) break;
@@ -281,7 +264,7 @@ export function generateLayout(input: GenerateInput): GenerateResult {
         pairIds: picked,
         maxHeightIn,
         heightIn,
-        widthIn: rowWidth(picked, byId, s),
+        widthIn: rowWidth(picked, byId, s, bracketW),
         bottomYIn: bottomY,
         bracketCount: bc,
       });
@@ -303,7 +286,7 @@ export function generateLayout(input: GenerateInput): GenerateResult {
     });
   }
 
-  const assignment = assignPairs(plans, byId, s, input.colorMode, seed, input.annealIterations ?? 4000);
+  const assignment = assignPairs(plans, byId, s, input.colorMode, seed, input.annealIterations ?? 4000, bracketW);
 
   // ---- build concrete geometry ----
   const wallLayouts: WallLayout[] = plans.map((plan) => {
@@ -312,14 +295,21 @@ export function generateLayout(input: GenerateInput): GenerateResult {
     let number = 1;
 
     const totalRows = plan.rows.length;
+    // The column grid is laid out ONCE per wall and every row uses it, so the
+    // plates line up vertically. A row that yields a corner simply has no
+    // bracket in the column nearest it; it does not slide sideways.
+    const consSpan = plan.usableX;
+    const widestRow = Math.max(0, ...plan.rows.map((r) => Math.ceil(r.pairIds.length / 2)));
+    const gridWidth = widestRow > 0 ? widestRow * bracketW + s.spacing.toeGapIn * (widestRow - 1) : 0;
+    const originX = Math.max(consSpan.x0, rowStartX(plan.wall, s, gridWidth));
+
     plan.rows.forEach((row, rowIndex) => {
       const ids = assignment.get(`${plan.wallIndex}:${rowIndex}`) ?? row.pairIds;
-      const width = rowWidth(ids, byId, s);
       // Rows are built bottom-up but corners interlock from the top, which is
       // the end two walls share once both stacks are anchored to the band top.
       const rowFromTop = totalRows - 1 - rowIndex;
-      const span = rowXRange(plan.wall, s, rowFromTop);
-      let cursor = rowStartX(plan.wall, s, rowFromTop, width);
+      const span = consSpan;
+      let cursor = originX;
 
       const drop = pattern === 'half-drop' ? halfDropOffset(row.heightIn, s) : 0;
       // Keep the odd-column stack from closing up on itself if a lower row ever
@@ -338,7 +328,10 @@ export function generateLayout(input: GenerateInput): GenerateResult {
 
         const shifted = pattern === 'half-drop' && b % 2 === 1;
         const armTopY = armTopBase - (shifted ? clampedDrop : 0);
-        const plateX = cursor + le;
+        // The plate sits at the centre of its column slot whatever the shoes
+        // in it measure, so shorter pairs leave a little slack either side
+        // rather than dragging the whole row out of line.
+        const plateX = cursor + bracketW / 2;
 
         const pairH = Math.max(
           leftId ? byId.get(leftId)!.measurement!.heightIn : 0,
@@ -354,16 +347,21 @@ export function generateLayout(input: GenerateInput): GenerateResult {
           plateYIn: s.hardware.plateToArmTopIn === null ? null : armTopY - s.hardware.plateToArmTopIn,
           leftPairId: leftId,
           rightPairId: rightId,
+          // Checkerboard, not stripes: alternating by column alone leaves a
+          // tall heel sitting above another tall heel, so the voids close
+          // sideways but not upward. Alternating by row as well means every
+          // neighbour in both directions is a toe meeting a heel.
+          toesIn: s.alternateToeDirection && (b + rowIndex) % 2 === 1,
           extent: {
-            x0: cursor,
-            x1: cursor + le + re,
+            x0: plateX - le,
+            x1: plateX + re,
             y0: armTopY - s.hardware.pairGapIn - pairH,
             y1: armTopY + pairH,
           },
         });
         numbers.push(number);
         number++;
-        cursor += le + re + s.spacing.toeGapIn;
+        cursor += pitch;
       }
 
       rows.push({
@@ -512,6 +510,7 @@ function assignPairs(
   mode: ColorMode,
   seed: number,
   iterations: number,
+  bracketW: number,
 ): Map<RowKey, string[]> {
   const result = new Map<RowKey, string[]>();
   const rng = mulberry32(seed || 1);
@@ -530,15 +529,13 @@ function assignPairs(
       const usableW = plan.usableX.x1 - plan.usableX.x0;
       let cursor = plan.usableX.x0 + (usableW - row.widthIn) / 2;
       const idxs: number[] = [];
+      const half = bracketW / 2;
       for (let b = 0; b < row.bracketCount; b++) {
-        const l = row.pairIds[b * 2], r = row.pairIds[b * 2 + 1];
-        const le = l ? armExtent(byId.get(l)!.measurement!.lengthIn, s) : emptyArmExtent(s);
-        const re = r ? armExtent(byId.get(r)!.measurement!.lengthIn, s) : emptyArmExtent(s);
         idxs.push(nodes.length);
-        nodes.push({ key, slotIndex: b * 2, xMid: cursor + le / 2, xSpan: [cursor, cursor + le], neighbours: [] });
+        nodes.push({ key, slotIndex: b * 2, xMid: cursor + half / 2, xSpan: [cursor, cursor + half], neighbours: [] });
         idxs.push(nodes.length);
-        nodes.push({ key, slotIndex: b * 2 + 1, xMid: cursor + le + re / 2, xSpan: [cursor + le, cursor + le + re], neighbours: [] });
-        cursor += le + re + s.spacing.toeGapIn;
+        nodes.push({ key, slotIndex: b * 2 + 1, xMid: cursor + half * 1.5, xSpan: [cursor + half, cursor + bracketW], neighbours: [] });
+        cursor += bracketW + s.spacing.toeGapIn;
       }
       nodeIndexByRow.set(key, idxs);
     });
@@ -661,7 +658,7 @@ function assignPairs(
         n2 = ib[Math.floor(rng() * ib.length)];
         const p1 = assign[n1], p2 = assign[n2];
         if (!p1 || !p2) continue;
-        if (!crossRowSwapAllowed(ka, kb, p1, p2, rowOf, planOf, byId, s)) continue;
+        if (!crossRowSwapAllowed(ka, kb, p1, p2, rowOf, planOf, byId, s, bracketW)) continue;
       } else {
         const k = rowKeys[Math.floor(rng() * rowKeys.length)];
         const idxs = nodeIndexByRow.get(k)!;
@@ -683,8 +680,8 @@ function assignPairs(
           const pa = assign[n1]!, pb = assign[n2]!;
           swapInPlace(ra.pairIds, pb, pa);
           swapInPlace(rb.pairIds, pa, pb);
-          ra.widthIn = rowWidth(ra.pairIds, byId, s);
-          rb.widthIn = rowWidth(rb.pairIds, byId, s);
+          ra.widthIn = rowWidth(ra.pairIds, byId, s, bracketW);
+          rb.widthIn = rowWidth(rb.pairIds, byId, s, bracketW);
         }
       } else {
         const back = assign[n1]; assign[n1] = assign[n2]; assign[n2] = back;
@@ -717,7 +714,7 @@ function swapInPlace(arr: string[], remove: string, add: string) {
 function crossRowSwapAllowed(
   ka: RowKey, kb: RowKey, p1: string, p2: string,
   rowOf: Map<RowKey, RowPlan>, planOf: Map<RowKey, WallPlan>,
-  byId: Map<string, Pair>, s: Settings,
+  byId: Map<string, Pair>, s: Settings, bracketW: number,
 ): boolean {
   const ra = rowOf.get(ka)!, rb = rowOf.get(kb)!;
   const h1 = byId.get(p1)!.measurement!.heightIn;
@@ -728,8 +725,8 @@ function crossRowSwapAllowed(
 
   const newA = ra.pairIds.map((x) => (x === p1 ? p2 : x));
   const newB = rb.pairIds.map((x) => (x === p2 ? p1 : x));
-  const wa = rowWidth(newA, byId, s);
-  const wb = rowWidth(newB, byId, s);
+  const wa = rowWidth(newA, byId, s, bracketW);
+  const wb = rowWidth(newB, byId, s, bracketW);
   const pa = planOf.get(ka)!, pb = planOf.get(kb)!;
   if (wa > pa.usableX.x1 - pa.usableX.x0 + 1e-9) return false;
   if (wb > pb.usableX.x1 - pb.usableX.x0 + 1e-9) return false;

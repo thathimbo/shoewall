@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   paper: { widthIn: 8.5, heightIn: 11, label: 'US Letter' },
   wallColorHex: '#d8d4cc',
   bracketCount: null,
+  alternateToeDirection: true,
 };
 
 export function makeDefaultWalls(): Wall[] {
@@ -38,8 +39,8 @@ export function makeDefaultWalls(): Wall[] {
     widthIn: 150,
     bandBottomIn: null,
     bandTopIn: null,
-    left: { isCorner: false, keepsClear: false, interlock: true },
-    right: { isCorner: false, keepsClear: false, interlock: true },
+    left: { isCorner: false, keepsClear: false },
+    right: { isCorner: false, keepsClear: false },
     maxColumns: null,
   });
   return [mk(0), mk(1), mk(2)];
