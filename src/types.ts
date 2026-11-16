@@ -126,6 +126,12 @@ export interface Wall {
   bandTopIn: number | null;
   left: WallEnd;
   right: WallEnd;
+  /**
+   * Cap on how many brackets may sit side by side in one row on this wall.
+   * null means as many as the width allows. Use it to keep one wall as a
+   * narrow stack and let the neighbouring wall carry the bulk.
+   */
+  maxColumns: number | null;
 }
 
 export interface HardwareSettings {

@@ -31,6 +31,7 @@ export function QuickPlan({ onDone }: { onDone: () => void }) {
   const [bandBottomIn, setBandBottomIn] = useState<number | null>(null);
   const [bandTopIn, setBandTopIn] = useState<number | null>(null);
   const [brackets, setBrackets] = useState<number | null>(null);
+  const [firstWallColumns, setFirstWallColumns] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -81,6 +82,7 @@ export function QuickPlan({ onDone }: { onDone: () => void }) {
         // rather than one wall losing a strip all the way up.
         left: { isCorner: i > 0, keepsClear: true, interlock: true },
         right: { isCorner: i < wallCount - 1, keepsClear: false, interlock: true },
+        maxColumns: i === 0 ? (firstWallColumns ?? null) : null,
       }));
 
       const nextSettings = { ...settings, bracketCount: brackets };
@@ -155,6 +157,9 @@ export function QuickPlan({ onDone }: { onDone: () => void }) {
         <NumField label="Brackets you own" unit={null} step={1} min={1} required
           value={brackets} onChange={setBrackets}
           hint="Each holds 2 pairs." />
+        <NumField label="Columns on wall 1 at most" unit={null} step={1} min={1}
+          value={firstWallColumns} onChange={setFirstWallColumns}
+          hint="Blank for as many as fit. Set it to keep wall 1 a narrow stack and let the rest carry the bulk." />
       </div>
 
       {problem ? <Notice kind="bad" title="Could not build it">{problem}</Notice> : null}

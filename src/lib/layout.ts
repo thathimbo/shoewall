@@ -100,9 +100,13 @@ export function usableXRange(wall: Wall, s: Settings): { x0: number; x1: number 
 /**
  * Where a row's run of brackets starts.
  *
- * A row that owns a corner is pushed hard against it rather than centred —
- * that is what makes the weave visible. A row with no corner to hug is centred
- * so its left and right margins match.
+ * Every row on a wall with a corner is anchored to that corner — hard against
+ * it on the rows it owns, backed off by the clearance on the rows it yields.
+ * Anchoring both ways is what keeps the weave to a single step in and out.
+ * Centring the yielding rows instead would scatter them across the wall, which
+ * is very visible on a wall carrying only a narrow stack of columns.
+ *
+ * A row with no corner at either end is centred, so its margins match.
  */
 export function rowStartX(
   wall: Wall, s: Settings, rowFromTop: number, contentWidth: number,
@@ -112,6 +116,9 @@ export function rowStartX(
   const ownsRight = wall.right.isCorner && !endYieldsOnRow(wall.right, rowFromTop);
   if (ownsLeft) return range.x0;
   if (ownsRight) return range.x1 - contentWidth;
+  // Yields its corner: stay beside it rather than drifting to the middle.
+  if (wall.left.isCorner) return range.x0;
+  if (wall.right.isCorner) return range.x1 - contentWidth;
   return range.x0 + (range.x1 - range.x0 - contentWidth) / 2;
 }
 
@@ -251,10 +258,9 @@ export function generateLayout(input: GenerateInput): GenerateResult {
         const candidate = queue[0];
         const trial = [...picked, candidate.id];
         if (rowWidth(trial, byId, s) > usableW + 1e-9) break;
-        if (bracketBudget !== null) {
-          const needed = Math.ceil(trial.length / 2);
-          if (bracketsUsed + needed > bracketBudget) break;
-        }
+        const neededForRow = Math.ceil(trial.length / 2);
+        if (plan.wall.maxColumns !== null && neededForRow > plan.wall.maxColumns) break;
+        if (bracketBudget !== null && bracketsUsed + neededForRow > bracketBudget) break;
         picked.push(candidate.id);
         queue.shift();
       }

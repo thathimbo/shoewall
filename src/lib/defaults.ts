@@ -40,6 +40,7 @@ export function makeDefaultWalls(): Wall[] {
     bandTopIn: null,
     left: { isCorner: false, keepsClear: false, interlock: true },
     right: { isCorner: false, keepsClear: false, interlock: true },
+    maxColumns: null,
   });
   return [mk(0), mk(1), mk(2)];
 }

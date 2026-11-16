@@ -30,6 +30,7 @@ export function WallsTab() {
                   bandBottomIn: null, bandTopIn: null,
                   left: { isCorner: false, keepsClear: false, interlock: true },
                   right: { isCorner: false, keepsClear: false, interlock: true },
+                  maxColumns: null,
                 },
               ])
             }
@@ -102,6 +103,11 @@ export function WallsTab() {
                 label="Usable band — top" value={w.bandTopIn} step={1} min={0} required
                 onChange={(v) => update(i, { bandTopIn: v })}
                 hint="Inches from the floor to the highest point a shoe may reach. The pattern hangs from this line."
+              />
+              <NumField
+                label="Most columns in a row" unit={null} value={w.maxColumns} step={1} min={1}
+                onChange={(v) => update(i, { maxColumns: v })}
+                hint="Blank for as many as the width allows."
               />
             </div>
 

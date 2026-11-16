@@ -57,10 +57,14 @@ for (const wl of L.walls) {
     const span = row.usableX;
     const ownsLeft = wall.left.isCorner && span.x0 === 0;
     const ownsRight = wall.right.isCorner && span.x1 === wall.widthIn;
-    if (ownsLeft) {
-      near(brs[0].extent.x0, span.x0, `wall ${wl.wallIndex} row ${row.rowIndex} hugs the left corner`);
-    } else if (ownsRight) {
-      near(brs[brs.length - 1].extent.x1, span.x1, `wall ${wl.wallIndex} row ${row.rowIndex} hugs the right corner`);
+    // Any wall with a corner anchors to it, owned or yielded; only a wall with
+    // no corner at either end centres its rows.
+    const anchorLeft = ownsLeft || (!ownsRight && wall.left.isCorner);
+    const anchorRight = !anchorLeft && (ownsRight || wall.right.isCorner);
+    if (anchorLeft) {
+      near(brs[0].extent.x0, span.x0, `wall ${wl.wallIndex} row ${row.rowIndex} sits against its left corner`);
+    } else if (anchorRight) {
+      near(brs[brs.length - 1].extent.x1, span.x1, `wall ${wl.wallIndex} row ${row.rowIndex} sits against its right corner`);
     } else {
       const left = brs[0].extent.x0 - span.x0;
       const right = span.x1 - brs[brs.length - 1].extent.x1;
@@ -212,8 +216,10 @@ console.log('--- manual swap ---');
   const swapWall = walls[n0.wallIndex];
   const ownsL = swapWall.left.isCorner && prow.usableX.x0 === 0;
   const ownsR = swapWall.right.isCorner && prow.usableX.x1 === swapWall.widthIn;
-  if (ownsL) near(brs[0].extent.x0, prow.usableX.x0, 'post-swap row still hugs its left corner');
-  else if (ownsR) near(brs[brs.length - 1].extent.x1, prow.usableX.x1, 'post-swap row still hugs its right corner');
+  const aL = ownsL || (!ownsR && swapWall.left.isCorner);
+  const aR = !aL && (ownsR || swapWall.right.isCorner);
+  if (aL) near(brs[0].extent.x0, prow.usableX.x0, 'post-swap row still against its left corner');
+  else if (aR) near(brs[brs.length - 1].extent.x1, prow.usableX.x1, 'post-swap row still against its right corner');
   else near(brs[0].extent.x0 - prow.usableX.x0, prow.usableX.x1 - brs[brs.length - 1].extent.x1,
             'post-swap row still centred horizontally');
   const top = Math.max(...n0.brackets.map(b => b.extent.y1));
