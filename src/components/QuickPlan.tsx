@@ -76,10 +76,11 @@ export function QuickPlan({ onDone }: { onDone: () => void }) {
         name: `Wall ${i + 1}`,
         widthIn: wallWidthIn,
         bandBottomIn, bandTopIn,
-        // Treat the run as a continuous set: each wall meets the next at a
-        // corner, and the later wall yields so the shoes do not collide.
-        left: { isCorner: i > 0, keepsClear: i > 0 },
-        right: { isCorner: i < wallCount - 1, keepsClear: false },
+        // A continuous run: each wall meets the next at a corner, and the two
+        // sides of each corner take opposite phases so their rows interlock
+        // rather than one wall losing a strip all the way up.
+        left: { isCorner: i > 0, keepsClear: true, interlock: true },
+        right: { isCorner: i < wallCount - 1, keepsClear: false, interlock: true },
       }));
 
       const nextSettings = { ...settings, bracketCount: brackets };

@@ -56,11 +56,63 @@ function emptyArmExtent(s: Settings): number {
   return s.hardware.bracketWidthIn / 2;
 }
 
+/**
+ * Does this end give up its clearance on this row?
+ *
+ * Without interlock the answer is the same for every row. With it, the two
+ * walls meeting at a corner take turns: one yields on even rows from the top,
+ * the other on odd ones, so their rows weave through the corner instead of one
+ * wall losing a strip all the way up.
+ */
+export function endYieldsOnRow(end: Wall['left'], rowFromTop: number): boolean {
+  if (!end.isCorner) return false;
+  if (!end.interlock) return end.keepsClear;
+  return end.keepsClear ? rowFromTop % 2 === 0 : rowFromTop % 2 === 1;
+}
+
+/**
+ * The X span available to one row. At an interlocking corner this alternates,
+ * so it is wider on the rows this wall owns.
+ */
+export function rowXRange(
+  wall: Wall, s: Settings, rowFromTop: number,
+): { x0: number; x1: number } {
+  const c = s.spacing.cornerClearanceIn;
+  return {
+    x0: endYieldsOnRow(wall.left, rowFromTop) ? c : 0,
+    x1: wall.widthIn - (endYieldsOnRow(wall.right, rowFromTop) ? c : 0),
+  };
+}
+
+/**
+ * The span every row is guaranteed, with the clearance taken off at each
+ * corner end regardless of whose turn it is. Rows are packed against this so
+ * one can never overflow; the ones that own a corner simply gain slack, which
+ * is then spent pushing them into the corner rather than widening their margins.
+ */
 export function usableXRange(wall: Wall, s: Settings): { x0: number; x1: number } {
   const c = s.spacing.cornerClearanceIn;
-  const x0 = wall.left.isCorner && wall.left.keepsClear ? c : 0;
-  const x1 = wall.widthIn - (wall.right.isCorner && wall.right.keepsClear ? c : 0);
+  const x0 = wall.left.isCorner && (wall.left.keepsClear || wall.left.interlock) ? c : 0;
+  const x1 = wall.widthIn - (wall.right.isCorner && (wall.right.keepsClear || wall.right.interlock) ? c : 0);
   return { x0, x1 };
+}
+
+/**
+ * Where a row's run of brackets starts.
+ *
+ * A row that owns a corner is pushed hard against it rather than centred —
+ * that is what makes the weave visible. A row with no corner to hug is centred
+ * so its left and right margins match.
+ */
+export function rowStartX(
+  wall: Wall, s: Settings, rowFromTop: number, contentWidth: number,
+): number {
+  const range = rowXRange(wall, s, rowFromTop);
+  const ownsLeft = wall.left.isCorner && !endYieldsOnRow(wall.left, rowFromTop);
+  const ownsRight = wall.right.isCorner && !endYieldsOnRow(wall.right, rowFromTop);
+  if (ownsLeft) return range.x0;
+  if (ownsRight) return range.x1 - contentWidth;
+  return range.x0 + (range.x1 - range.x0 - contentWidth) / 2;
 }
 
 interface RowPlan {
@@ -253,12 +305,15 @@ export function generateLayout(input: GenerateInput): GenerateResult {
     const brackets: Bracket[] = [];
     let number = 1;
 
+    const totalRows = plan.rows.length;
     plan.rows.forEach((row, rowIndex) => {
       const ids = assignment.get(`${plan.wallIndex}:${rowIndex}`) ?? row.pairIds;
       const width = rowWidth(ids, byId, s);
-      const usableW = plan.usableX.x1 - plan.usableX.x0;
-      const margin = (usableW - width) / 2;
-      let cursor = plan.usableX.x0 + margin;
+      // Rows are built bottom-up but corners interlock from the top, which is
+      // the end two walls share once both stacks are anchored to the band top.
+      const rowFromTop = totalRows - 1 - rowIndex;
+      const span = rowXRange(plan.wall, s, rowFromTop);
+      let cursor = rowStartX(plan.wall, s, rowFromTop, width);
 
       const drop = pattern === 'half-drop' ? halfDropOffset(row.heightIn, s) : 0;
       // Keep the odd-column stack from closing up on itself if a lower row ever
@@ -307,6 +362,8 @@ export function generateLayout(input: GenerateInput): GenerateResult {
 
       rows.push({
         rowIndex,
+        rowFromTop,
+        usableX: span,
         maxPairHeightIn: row.maxHeightIn,
         heightIn: row.heightIn,
         bottomYIn: row.bottomYIn,
@@ -340,8 +397,9 @@ export function generateLayout(input: GenerateInput): GenerateResult {
           `Bracket ${b.number} reaches ${(b.extent.y1 - plan.usableY.y1).toFixed(2)}" above the usable band.`,
         );
       }
-      if (b.extent.x0 < plan.usableX.x0 - 0.01 || b.extent.x1 > plan.usableX.x1 + 0.01) {
-        warnings.push(`Bracket ${b.number} sits outside the usable width.`);
+      const rowSpan = rows.find((r) => r.rowIndex === b.rowIndex)?.usableX ?? plan.usableX;
+      if (b.extent.x0 < rowSpan.x0 - 0.01 || b.extent.x1 > rowSpan.x1 + 0.01) {
+        warnings.push(`Bracket ${b.number} sits outside the width its row may use.`);
       }
     }
 
@@ -746,13 +804,22 @@ export function recomputeWall(
     });
     const total =
       widths.reduce((sum, w) => sum + w.le + w.re, 0) + s.spacing.toeGapIn * Math.max(0, brs.length - 1);
-    const usableW = wl.usableX.x1 - wl.usableX.x0;
+    const span = row.usableX ?? wl.usableX;
+    const usableW = span.x1 - span.x0;
     if (total > usableW + 0.01) {
       warnings.push(
         `Row ${row.rowIndex + 1} now needs ${total.toFixed(2)}" but only ${usableW.toFixed(2)}" is usable.`,
       );
     }
-    let cursor = wl.usableX.x0 + (usableW - total) / 2;
+    // Keep whatever this row was anchored to: hard against a corner it owns,
+    // centred otherwise. The row's span already encodes which.
+    const ownsLeft = Math.abs(span.x0 - 0) < 1e-9 && wl.usableX.x0 > 0;
+    const ownsRight = Math.abs(span.x1 - wl.widthIn) < 1e-9 && wl.usableX.x1 < wl.widthIn;
+    let cursor = ownsLeft
+      ? span.x0
+      : ownsRight
+        ? span.x1 - total
+        : span.x0 + (usableW - total) / 2;
     const armTopBase = row.bottomYIn + maxH + s.hardware.pairGapIn;
     row.bracketNumbers = [];
     brs.forEach((b, i) => {

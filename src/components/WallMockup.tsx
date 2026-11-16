@@ -71,21 +71,42 @@ export function WallMockup({
         {showOverlay ? (
           <>
             <rect
-              x={wall.usableX.x0} y={toScreenY(wall.usableY.y1)}
-              width={wall.usableX.x1 - wall.usableX.x0}
+              x={0} y={toScreenY(wall.usableY.y1)}
+              width={viewW}
               height={wall.usableY.y1 - wall.usableY.y0}
               fill="rgba(110,168,254,.08)" stroke="rgba(110,168,254,.8)" strokeWidth={0.3} strokeDasharray="2 1.5"
             />
-            {wall.usableX.x0 > 0 ? (
-              <rect x={0} y={0} width={wall.usableX.x0} height={viewTop} fill="rgba(0,0,0,.14)" />
-            ) : null}
-            {wall.usableX.x1 < viewW ? (
-              <rect x={wall.usableX.x1} y={0} width={viewW - wall.usableX.x1} height={viewTop} fill="rgba(0,0,0,.14)" />
-            ) : null}
+            {/* Corner clearance is shaded per row, because an interlocking
+                corner gives it up on alternate rows — that alternation is the
+                weave, not a mistake. */}
+            {wall.rows.flatMap((r) => {
+              const blocks = [];
+              if (r.usableX && r.usableX.x0 > 0) {
+                blocks.push(
+                  <rect
+                    key={`cl-${r.rowIndex}`}
+                    x={0} y={toScreenY(r.bottomYIn + r.heightIn)}
+                    width={r.usableX.x0} height={r.heightIn}
+                    fill="rgba(0,0,0,.16)"
+                  />,
+                );
+              }
+              if (r.usableX && r.usableX.x1 < viewW) {
+                blocks.push(
+                  <rect
+                    key={`cr-${r.rowIndex}`}
+                    x={r.usableX.x1} y={toScreenY(r.bottomYIn + r.heightIn)}
+                    width={viewW - r.usableX.x1} height={r.heightIn}
+                    fill="rgba(0,0,0,.16)"
+                  />,
+                );
+              }
+              return blocks;
+            })}
             {wall.rows.map((r) => (
               <line
                 key={r.rowIndex}
-                x1={wall.usableX.x0} x2={wall.usableX.x1}
+                x1={r.usableX?.x0 ?? wall.usableX.x0} x2={r.usableX?.x1 ?? wall.usableX.x1}
                 y1={toScreenY(r.bottomYIn)} y2={toScreenY(r.bottomYIn)}
                 stroke="rgba(0,0,0,.3)" strokeWidth={0.2} strokeDasharray="1 1"
               />

@@ -95,8 +95,24 @@ export interface Pair {
 export interface WallEnd {
   /** Is this end of the wall a corner shared with another wall in the set? */
   isCorner: boolean;
-  /** When a corner: does THIS wall keep the clearance clear (true) or does the neighbour (false)? */
+  /**
+   * At a corner, which wall backs off.
+   *
+   * With `interlock` off this applies to every row: true means this wall keeps
+   * the clearance clear the whole way up and the neighbour runs to the corner.
+   *
+   * With `interlock` on it instead sets the PHASE, so the two walls take turns
+   * row by row: true yields on even rows counted from the top, false yields on
+   * odd ones. Set one wall true and its neighbour false and the rows weave
+   * through the corner like finger joints.
+   */
   keepsClear: boolean;
+  /**
+   * Alternate the clearance row by row rather than applying it to all of them.
+   * Rows are counted from the TOP, which is the end that lines up between two
+   * walls, since every stack is anchored to the top of its band.
+   */
+  interlock: boolean;
 }
 
 export interface Wall {
@@ -181,6 +197,10 @@ export interface Bracket {
 
 export interface LayoutRow {
   rowIndex: number;
+  /** Position counted from the top of the band, where walls line up. 0 is the top row. */
+  rowFromTop: number;
+  /** This row's own usable X span, which at an interlocking corner differs row to row. */
+  usableX: { x0: number; x1: number };
   /** Tallest pair height in this row, inches. */
   maxPairHeightIn: number;
   /** 2 * maxPairHeight + pairGap */

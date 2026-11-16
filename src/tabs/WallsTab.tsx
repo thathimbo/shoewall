@@ -28,8 +28,8 @@ export function WallsTab() {
                 {
                   id: uid(), name: `Wall ${walls.length + 1}`, widthIn: 150,
                   bandBottomIn: null, bandTopIn: null,
-                  left: { isCorner: false, keepsClear: false },
-                  right: { isCorner: false, keepsClear: false },
+                  left: { isCorner: false, keepsClear: false, interlock: true },
+                  right: { isCorner: false, keepsClear: false, interlock: true },
                 },
               ])
             }
@@ -177,17 +177,25 @@ function EndEditor({
       <Checkbox
         label="Corner shared with another wall"
         checked={end.isCorner}
-        onChange={(v) => onChange({ isCorner: v, keepsClear: v ? end.keepsClear : false })}
+        onChange={(v) => onChange({ ...end, isCorner: v })}
       />
       <Checkbox
-        label="This wall keeps the clearance clear"
+        label="Rows interlock through the corner"
+        checked={end.interlock}
+        disabled={!end.isCorner}
+        onChange={(v) => onChange({ ...end, interlock: v })}
+      />
+      <Checkbox
+        label={end.interlock ? 'Start by yielding the top row' : 'This wall keeps the clearance clear'}
         checked={end.keepsClear}
         disabled={!end.isCorner}
         onChange={(v) => onChange({ ...end, keepsClear: v })}
       />
-      {end.isCorner && !end.keepsClear && otherWalls.length ? (
+      {end.isCorner && otherWalls.length ? (
         <p className="small muted" style={{ margin: '.2rem 0 0' }}>
-          The other wall at this corner yields instead — tick it there.
+          {end.interlock
+            ? 'The two walls take turns row by row, so their rows weave through the corner. Set this box one way here and the other way on the neighbouring wall.'
+            : 'One wall yields on every row. The other wall at this corner should have this box set the opposite way.'}
         </p>
       ) : null}
     </div>

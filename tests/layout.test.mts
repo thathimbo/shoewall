@@ -29,8 +29,8 @@ let n = 0;
 for (const h of [7, 5.5, 4]) for (let i = 0; i < 8; i++) pairs.push(mkPair(n++, 13 + (i % 3) * 0.25, h, palette[i % palette.length]));
 
 const walls: Wall[] = makeDefaultWalls().map(w => ({ ...w, bandBottomIn: 24, bandTopIn: 96 }));
-walls[1].left = { isCorner: true, keepsClear: true };
-walls[0].right = { isCorner: true, keepsClear: false };
+walls[1].left = { isCorner: true, keepsClear: true, interlock: true };
+walls[0].right = { isCorner: true, keepsClear: false, interlock: true };
 
 console.log('--- grid ---');
 let r = generateLayout({ pairs, walls, settings: S, pattern: 'grid', colorMode: 'contrast', excludedPairIds: [], seed: 7, annealIterations: 800 });
@@ -52,10 +52,22 @@ for (const wl of L.walls) {
 
   for (const row of wl.rows) {
     const brs = wl.brackets.filter(b => b.rowIndex === row.rowIndex).sort((a, b) => a.colIndex - b.colIndex);
-    // centred: equal margins
-    const left = brs[0].extent.x0 - wl.usableX.x0;
-    const right = wl.usableX.x1 - brs[brs.length - 1].extent.x1;
-    near(left, right, `wall ${wl.wallIndex} row ${row.rowIndex} margins equal`, 1e-6);
+    // A row that owns a corner hugs it; one with no corner to hug is centred.
+    const wall = walls[wl.wallIndex];
+    const span = row.usableX;
+    const ownsLeft = wall.left.isCorner && span.x0 === 0;
+    const ownsRight = wall.right.isCorner && span.x1 === wall.widthIn;
+    if (ownsLeft) {
+      near(brs[0].extent.x0, span.x0, `wall ${wl.wallIndex} row ${row.rowIndex} hugs the left corner`);
+    } else if (ownsRight) {
+      near(brs[brs.length - 1].extent.x1, span.x1, `wall ${wl.wallIndex} row ${row.rowIndex} hugs the right corner`);
+    } else {
+      const left = brs[0].extent.x0 - span.x0;
+      const right = span.x1 - brs[brs.length - 1].extent.x1;
+      near(left, right, `wall ${wl.wallIndex} row ${row.rowIndex} margins equal`, 1e-6);
+    }
+    ok(brs[0].extent.x0 >= span.x0 - 1e-6 && brs[brs.length - 1].extent.x1 <= span.x1 + 1e-6,
+       `wall ${wl.wallIndex} row ${row.rowIndex} inside its own span`);
     // toe gap between neighbouring columns
     for (let i = 0; i + 1 < brs.length; i++) {
       near(brs[i + 1].extent.x0 - brs[i].extent.x1, S.spacing.toeGapIn, `toe gap r${row.rowIndex} c${i}`);
@@ -132,6 +144,48 @@ for (const wl of L2.walls) {
   }
 }
 
+console.log('--- interlocking corner ---');
+{
+  // Two walls meeting at one corner, phased opposite so their rows weave.
+  const A: Wall = { id: 'A', name: 'A', widthIn: 70, bandBottomIn: 16, bandTopIn: 104,
+    left: { isCorner: false, keepsClear: false, interlock: true },
+    right: { isCorner: true, keepsClear: false, interlock: true } };
+  const B: Wall = { id: 'B', name: 'B', widthIn: 70, bandBottomIn: 16, bandTopIn: 104,
+    left: { isCorner: true, keepsClear: true, interlock: true },
+    right: { isCorner: false, keepsClear: false, interlock: true } };
+  const r = generateLayout({ pairs, walls: [A, B], settings: S, pattern: 'grid',
+    colorMode: 'contrast', excludedPairIds: [], seed: 5, annealIterations: 200 });
+  ok(r.blockers.length === 0, 'interlock: generates');
+  const [wa, wb] = r.layout!.walls;
+  ok(wa.rows.length > 1 && wb.rows.length > 1, `interlock: both walls have several rows (${wa.rows.length}/${wb.rows.length})`);
+
+  const clearance = S.spacing.cornerClearanceIn;
+  const reach = (wl: typeof wa, wall: Wall, fromTop: number) => {
+    const row = wl.rows.find(x => x.rowFromTop === fromTop);
+    if (!row) return null;
+    const brs = wl.brackets.filter(b => b.rowIndex === row.rowIndex).sort((x, y) => x.colIndex - y.colIndex);
+    // How close this row gets to the shared corner.
+    return wall.right.isCorner
+      ? wall.widthIn - brs[brs.length - 1].extent.x1
+      : brs[0].extent.x0;
+  };
+
+  const shared = Math.min(wa.rows.length, wb.rows.length);
+  let alternated = 0;
+  for (let t = 0; t < shared; t++) {
+    const ga = reach(wa, A, t)!, gb = reach(wb, B, t)!;
+    const aOwns = ga < 0.01, bOwns = gb < 0.01;
+    ok(aOwns !== bOwns, `row ${t} from top: exactly one wall reaches the corner (A gap ${ga.toFixed(2)}, B gap ${gb.toFixed(2)})`);
+    ok(aOwns ? gb >= clearance - 0.01 : ga >= clearance - 0.01,
+       `row ${t} from top: the yielding wall keeps ${clearance}" clear`);
+    if (t > 0) {
+      const prev = reach(wa, A, t - 1)! < 0.01;
+      if (prev !== aOwns) alternated++;
+    }
+  }
+  ok(alternated === shared - 1, `ownership alternates every row (${alternated} of ${shared - 1} changes)`);
+}
+
 console.log('--- manual swap ---');
 {
   const { swapPairsInLayout } = await import('../src/lib/layout.ts');
@@ -154,9 +208,14 @@ console.log('--- manual swap ---');
   for (let i = 0; i + 1 < brs.length; i++) {
     near(brs[i + 1].extent.x0 - brs[i].extent.x1, S.spacing.toeGapIn, `post-swap toe gap ${i}`);
   }
-  const left = brs[0].extent.x0 - n0.usableX.x0;
-  const right = n0.usableX.x1 - brs[brs.length - 1].extent.x1;
-  near(left, right, 'post-swap row still centred horizontally');
+  const prow = n0.rows.find(r => r.rowIndex === n1.rowIndex)!;
+  const swapWall = walls[n0.wallIndex];
+  const ownsL = swapWall.left.isCorner && prow.usableX.x0 === 0;
+  const ownsR = swapWall.right.isCorner && prow.usableX.x1 === swapWall.widthIn;
+  if (ownsL) near(brs[0].extent.x0, prow.usableX.x0, 'post-swap row still hugs its left corner');
+  else if (ownsR) near(brs[brs.length - 1].extent.x1, prow.usableX.x1, 'post-swap row still hugs its right corner');
+  else near(brs[0].extent.x0 - prow.usableX.x0, prow.usableX.x1 - brs[brs.length - 1].extent.x1,
+            'post-swap row still centred horizontally');
   const top = Math.max(...n0.brackets.map(b => b.extent.y1));
   near(top, n0.usableY.y1, 'post-swap stack still flush with the band top');
 }
