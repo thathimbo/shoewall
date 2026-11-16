@@ -31,7 +31,6 @@ export function installSheetCsv(layout: Layout, pairs: Pair[], settings: Setting
     'Plate centre X (in from left wall edge)',
     'Plate centre Y (in from floor)',
     'Arm top Y (in from floor)',
-    'Load',
     'Left arm pair', 'Left length (in)', 'Left height (in)',
     'Right arm pair', 'Right length (in)', 'Right height (in)',
   ]);
@@ -46,7 +45,6 @@ export function installSheetCsv(layout: Layout, pairs: Pair[], settings: Setting
           ? 'NOT KNOWN'
           : n(b.armTopYIn - settings.hardware.plateToArmTopIn),
         n(b.armTopYIn),
-        b.toesIn ? 'toes to centre' : 'heels to centre',
         label(b.leftPairId), n(l?.measurement?.lengthIn), n(l?.measurement?.heightIn),
         label(b.rightPairId), n(r?.measurement?.lengthIn), n(r?.measurement?.heightIn),
       ]);

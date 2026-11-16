@@ -347,11 +347,6 @@ export function generateLayout(input: GenerateInput): GenerateResult {
           plateYIn: s.hardware.plateToArmTopIn === null ? null : armTopY - s.hardware.plateToArmTopIn,
           leftPairId: leftId,
           rightPairId: rightId,
-          // Checkerboard, not stripes: alternating by column alone leaves a
-          // tall heel sitting above another tall heel, so the voids close
-          // sideways but not upward. Alternating by row as well means every
-          // neighbour in both directions is a toe meeting a heel.
-          toesIn: s.alternateToeDirection && (b + rowIndex) % 2 === 1,
           extent: {
             x0: plateX - le,
             x1: plateX + re,

@@ -29,7 +29,6 @@ export const DEFAULT_SETTINGS: Settings = {
   paper: { widthIn: 8.5, heightIn: 11, label: 'US Letter' },
   wallColorHex: '#d8d4cc',
   bracketCount: null,
-  alternateToeDirection: true,
 };
 
 export function makeDefaultWalls(): Wall[] {

@@ -159,8 +159,6 @@ export interface Settings {
   paper: { widthIn: number; heightIn: number; label: string };
   wallColorHex: string;
   bracketCount: number | null;
-  /** Alternate the loading direction column by column. See Bracket.toesIn. */
-  alternateToeDirection: boolean;
 }
 
 // --- layout ---
@@ -186,21 +184,6 @@ export interface Bracket {
   plateYIn: number | null;
   leftPairId: string | null;
   rightPairId: string | null;
-  /**
-   * How this bracket is loaded. false = heels to the bracket centre, toes
-   * pointing out (the default). true = the other way round, toes to the centre.
-   *
-   * Alternating this column by column is what turns the wall into a mesh. Load
-   * every bracket the same way and each one is a bowtie: fat heels in the
-   * middle, toes tapering to a point at both ends, so where two brackets meet
-   * you get point against point and a diamond-shaped hole above and below.
-   * Alternate it and every toe meets a heel, so the thin end of one shoe is
-   * filled by the bulk of its neighbour.
-   *
-   * The bracket does not care: the shoe sits on the arm either way. This is a
-   * loading instruction, and it changes nothing about where you drill.
-   */
-  toesIn: boolean;
   /** Extent of the loaded bracket, for drawing and overlap checks. */
   extent: { x0: number; x1: number; y0: number; y1: number };
 }
