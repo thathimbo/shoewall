@@ -63,7 +63,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Merge so a project saved by an older build still gets every field.
       setSettingsState({
         ...DEFAULT_SETTINGS, ...s,
-        hardware: { ...DEFAULT_SETTINGS.hardware, ...s.hardware },
+        hardware: {
+          ...DEFAULT_SETTINGS.hardware,
+          ...s.hardware,
+          // A project saved before the spec sheet arrived has this as null,
+          // meaning "not known" rather than a deliberate choice. Now that the
+          // figure is known, fill it in rather than leaving drill heights blank.
+          plateToArmTopIn: s.hardware?.plateToArmTopIn ?? DEFAULT_SETTINGS.hardware.plateToArmTopIn,
+        },
         spacing: { ...DEFAULT_SETTINGS.spacing, ...s.spacing },
         heightClass: { ...DEFAULT_SETTINGS.heightClass, ...s.heightClass },
         paper: { ...DEFAULT_SETTINGS.paper, ...s.paper },

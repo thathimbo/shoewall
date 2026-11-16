@@ -73,7 +73,14 @@ export function SettingsTab() {
             The vertical offset from the mounting-plate centre to the top of the arms. Without it the install sheet
             cannot give plate heights. Hold a tape against one bracket: plate centre up to the top face of the arms.
           </Notice>
-        ) : null}
+        ) : (
+          <Notice kind="info" title="Plate offset came from the spec sheet, not a tape">
+            The bracket is {hw.bracketHeightIn}" tall overall with a {hw.plateSizeIn}" plate at the bottom, so the
+            plate centre sits {hw.plateToArmTopIn}" below the top of the arms. Every drill height on the install
+            sheet is that far below where the shoes rest, so it is worth one check against a real bracket. Change it
+            here and the sheet updates — no need to regenerate.
+          </Notice>
+        )}
         <div className="grid2">
           <NumField label="Bracket width" value={hw.bracketWidthIn} step={0.25} min={1}
             onChange={(v) => v !== null && setHw({ bracketWidthIn: v })}
@@ -83,9 +90,12 @@ export function SettingsTab() {
             hint="Recorded for reference; the mockup is a flat elevation." />
           <NumField label="Mounting plate (square)" value={hw.plateSizeIn} step={0.25} min={0.25}
             onChange={(v) => v !== null && setHw({ plateSizeIn: v })} />
+          <NumField label="Bracket height, overall" value={hw.bracketHeightIn} step={0.25} min={0.25}
+            onChange={(v) => v !== null && setHw({ bracketHeightIn: v })}
+            hint="Top of the arms down to the lowest point." />
           <NumField label="Plate centre → top of arms" value={hw.plateToArmTopIn} step={0.125} required
             onChange={(v) => setHw({ plateToArmTopIn: v })}
-            hint="Measure this one. Install-sheet Y heights depend on it." />
+            hint="From the spec sheet. Install-sheet drill heights depend on it." />
           <NumField label="Heel inset from bracket centre" value={hw.heelInsetFromCenterIn} step={0.125} min={0}
             onChange={(v) => v !== null && setHw({ heelInsetFromCenterIn: v })}
             hint="0 means the two heels meet at the centre." />

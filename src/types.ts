@@ -119,9 +119,11 @@ export interface HardwareSettings {
   armDepthIn: number;
   /** Mounting plate, inches square. */
   plateSizeIn: number;
+  /** Overall height of the bracket, top of arms to its lowest point. */
+  bracketHeightIn: number;
   /**
    * Vertical distance from the mounting plate CENTRE up to the TOP of the arms.
-   * null until measured — install-sheet Y values are blocked while it is null.
+   * null means not known, and install-sheet Y values are blocked while it is.
    */
   plateToArmTopIn: number | null;
   /** Horizontal distance from bracket centre to where a heel sits. 0 = heels meet at centre. */

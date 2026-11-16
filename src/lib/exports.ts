@@ -40,7 +40,11 @@ export function installSheetCsv(layout: Layout, pairs: Pair[], settings: Setting
       const r = b.rightPairId ? byId.get(b.rightPairId) : undefined;
       rows.push([
         wl.wallName, b.number, b.rowIndex + 1,
-        n(b.plateXIn), b.plateYIn === null ? 'NOT MEASURED' : n(b.plateYIn), n(b.armTopYIn),
+        n(b.plateXIn),
+        settings.hardware.plateToArmTopIn === null
+          ? 'NOT KNOWN'
+          : n(b.armTopYIn - settings.hardware.plateToArmTopIn),
+        n(b.armTopYIn),
         label(b.leftPairId), n(l?.measurement?.lengthIn), n(l?.measurement?.heightIn),
         label(b.rightPairId), n(r?.measurement?.lengthIn), n(r?.measurement?.heightIn),
       ]);

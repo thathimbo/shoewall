@@ -18,6 +18,13 @@ export function InstallTab({ goLayout, goSettings }: { goLayout: () => void; goS
   }
 
   const plateMissing = settings.hardware.plateToArmTopIn === null;
+  /**
+   * Derived live from the current setting, not from whatever was stored when
+   * the layout was generated, so correcting the offset updates every drill
+   * height without having to regenerate and reshuffle the wall.
+   */
+  const plateY = (armTopYIn: number): number | null =>
+    settings.hardware.plateToArmTopIn === null ? null : armTopYIn - settings.hardware.plateToArmTopIn;
   const label = (id: string | null) => {
     if (!id) return <span className="muted">(empty)</span>;
     const p = byId.get(id);
@@ -111,9 +118,9 @@ export function InstallTab({ goLayout, goSettings }: { goLayout: () => void; goS
                       <td className="mono">{b.rowIndex + 1}</td>
                       <td className="mono nowrap">{b.plateXIn.toFixed(2)}"</td>
                       <td className="mono nowrap">
-                        {b.plateYIn === null
-                          ? <span className="pill bad">not measured</span>
-                          : `${b.plateYIn.toFixed(2)}"`}
+                        {plateY(b.armTopYIn) === null
+                          ? <span className="pill bad">not known</span>
+                          : `${plateY(b.armTopYIn)!.toFixed(2)}"`}
                       </td>
                       <td className="mono nowrap">{b.armTopYIn.toFixed(2)}"</td>
                       <td>{label(b.leftPairId)}</td>

@@ -5,8 +5,17 @@ export const DEFAULT_SETTINGS: Settings = {
     bracketWidthIn: 16,
     armDepthIn: 2,
     plateSizeIn: 2,
-    // Not measured yet. Everything that needs it says so instead of guessing.
-    plateToArmTopIn: null,
+    /**
+     * Read off the manufacturer's spec sheet rather than measured: the bracket
+     * is 8" overall in height, and the 2" mounting plate sits at the bottom, so
+     * its centre is 1" up and the top of the arms is 7" above that.
+     *
+     * Worth a tape against a real bracket, because every drill height on the
+     * install sheet is this number below where the shoes actually sit.
+     */
+    plateToArmTopIn: 7,
+    /** Overall height of the bracket, from the spec sheet. */
+    bracketHeightIn: 8,
     heelInsetFromCenterIn: 0,
     pairGapIn: 0,
   },
