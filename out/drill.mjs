@@ -12,10 +12,10 @@ const PLATE = 7;   // plate centre below the TOP of the bracket (8" tall, plate 
 const blockW = 2 * L;             // two shoes wide, heels meeting at the centre
 const dropB = MOD / 2;            // every other column drops half a module -> 45-degree checkerboard
 
-const nCols = Math.floor(W / blockW);
-const x0 = (W - nCols * blockW) / 2;
+const START = 0;                  // first column starts flush with the left wall edge
+const nCols = Math.floor((W - START) / blockW);
 const cols = Array.from({ length: nCols }, (_, i) => ({
-  x: x0 + i * blockW + blockW / 2,
+  x: START + i * blockW + blockW / 2,   // plate sits where the two heels meet
   off: i % 2 === 1 ? dropB : 0,
 }));
 
