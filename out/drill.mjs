@@ -5,19 +5,23 @@ import { fileURLToPath } from 'node:url';
 
 const W = 150;     // wall width
 const BAND = 42;   // usable band, measured down from the ceiling
-const L = 13.5;    // one shoe, heel to toe (size 15 Nike, estimate)
+const L = 14;      // one shoe, heel to toe
 const MOD = 8;     // bracket height = the stacked pair = 2 shoes
 const PLATE = 7;   // plate centre below the TOP of the bracket (8" tall, plate 2" at the bottom)
 
-const blockW = 2 * L;             // two shoes wide, heels meeting at the centre
-const dropB = MOD / 2;            // every other column drops half a module -> 45-degree checkerboard
+const blockW = 2 * L;             // a loaded bracket: two shoes, heels meeting at the plate
+const pitchX = L;                 // columns sit ONE shoe length apart, so they overlap
+const dropB = MOD / 2;            // alternate columns drop half a module and interleave
 
-const START = 0;                  // first column starts flush with the left wall edge
-const nCols = Math.floor((W - START) / blockW);
-const cols = Array.from({ length: nCols }, (_, i) => ({
-  x: START + i * blockW + blockW / 2,   // plate sits where the two heels meet
-  off: i % 2 === 1 ? dropB : 0,
-}));
+// Plates at 14, 28, 42, 56 ... growing out from the left corner. A bracket
+// reaches one shoe length either side of its plate, so the last one that fits
+// has its plate a shoe length in from the right edge.
+const cols = [];
+for (let i = 0; ; i++) {
+  const x = L + i * pitchX;
+  if (x + L > W + 1e-9) break;
+  cols.push({ x, off: i % 2 === 1 ? dropB : 0 });
+}
 
 const marks = [];
 for (const [i, c] of cols.entries()) {
